@@ -27,7 +27,7 @@ pub fn run_in_docker(
     }
 
     // Run the tool in the container
-    run_container(&image_name, &tool_config.name, tool_path, args)?;
+    run_container(&image_name, tool_config, tool_path, args)?;
 
     Ok(())
 }
@@ -132,20 +132,29 @@ CMD ["python3"]
 /// Run the tool in a Docker container
 fn run_container(
     image_name: &str,
-    tool_name: &str,
-    tool_path: &Path,
+    tool_config: &ToolConfig,
+    _tool_path: &Path,
     args: &[String],
 ) -> Result<()> {
     println!("  {} Running in container...", "→".cyan());
 
     // Prepare command to run inside container
     // For Python modules: python3 -m <module_name>
-    let container_cmd = format!("python3 -m {}", tool_name);
+    let container_cmd = format!("python3 -m {}", tool_config.name);
+
+    // Build container name: <tool>_<version> (e.g., sshmenuc_1.1.0)
+    let container_name = if let Some(version) = &tool_config.version {
+        format!("{}_{}", tool_config.name, version)
+    } else {
+        tool_config.name.clone()
+    };
 
     // Build docker run command
     let mut cmd = Command::new("docker");
     cmd.arg("run");
     cmd.arg("--rm"); // Remove container after exit
+    cmd.arg("--name");
+    cmd.arg(&container_name);
 
     // Check if stdout is a TTY - if yes, use -it for interactive tools
     use std::io::IsTerminal;
@@ -155,9 +164,33 @@ fn run_container(
         cmd.arg("-i"); // Interactive only (for pipes/redirects)
     }
 
+    // Get user's home directory and UID/GID
+    let home = std::env::var("HOME").unwrap_or_default();
+
+    // Get current user's UID and GID
+    #[cfg(unix)]
+    let user_id = {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = std::fs::metadata(&home).ok();
+        metadata.map(|m| format!("{}:{}", m.uid(), m.gid()))
+    };
+
+    // Run container as current user (preserves permissions and home structure)
+    #[cfg(unix)]
+    if let Some(uid_gid) = user_id {
+        cmd.arg("--user");
+        cmd.arg(&uid_gid);
+    }
+
+    // Set HOME environment variable in container
+    cmd.arg("-e");
+    cmd.arg(format!("HOME={}", home));
+
+    // Mount volumes for tool access to configs and data
     cmd.args([
-        "-v",
-        &format!("{}:/data", std::env::var("HOME").unwrap_or_default()), // Mount home for SSH configs
+        "-v", &format!("{}/.ssh:{}/.ssh:ro", home, home),        // SSH configs (read-only)
+        "-v", &format!("{}/.config:{}/.config", home, home),     // App configs (read-write)
+        "-v", &format!("{}:{}", home, home),                     // Home directory (preserves paths)
         "-w", "/app",
     ]);
 

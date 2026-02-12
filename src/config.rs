@@ -40,6 +40,7 @@ pub struct ToolConfig {
     pub name: String,
     pub repo: String,
     pub branch: Option<String>,
+    pub version: Option<String>,
     #[serde(rename = "type")]
     pub tool_type: Option<String>,
     pub isolation: Option<IsolationStrategy>,

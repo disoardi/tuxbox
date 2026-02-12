@@ -70,6 +70,7 @@ fn get_tool_config(tool_name: &str) -> Result<ToolConfig> {
             name: "sshmenuc".to_string(),
             repo: "https://github.com/disoardi/sshmenuc".to_string(),
             branch: Some("main".to_string()),
+            version: Some("1.1.0".to_string()),
             tool_type: Some("python".to_string()),
             isolation: None, // Phase 1: will add venv support
             commands: Some(crate::config::Commands {
@@ -81,6 +82,7 @@ fn get_tool_config(tool_name: &str) -> Result<ToolConfig> {
             name: "test-tool".to_string(),
             repo: "https://github.com/your-username/test-tool".to_string(),
             branch: None,
+            version: Some("0.1.0".to_string()),
             tool_type: Some("bash".to_string()),
             isolation: None,
             commands: Some(crate::config::Commands {
