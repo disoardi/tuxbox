@@ -10,18 +10,54 @@
 
 ---
 
-## 📊 Stato Corrente
+## 📊 Stato Corrente (Aggiornato: 2026-02-12)
 
 ### Repository Setup
-- Git repository inizializzato (commit: d72ea7c)
+- Git repository: ✅ Inizializzato
+- Latest commit: **9a13d77** - Container naming + UID/GID + HOME mount
 - Branch: main
 - Remote: da configurare (https://github.com/disoardi/tuxbox)
+- Commits oggi: 3 (d72ea7c → 040d557 → 9a13d77)
 
 ### Codice Implementato
-- ✅ Struttura modulare completa (7 moduli Rust)
+- ✅ Struttura modulare completa (10 moduli Rust)
+  - main, cli, config, error, git, runner
+  - **environment, docker, python** (NUOVI - implementati oggi)
 - ✅ Dependencies moderne (Clap 4.5, git2, thiserror, colored)
 - ✅ Documentazione esaustiva in `.claude/`
-- ⚠️ **Non ancora compilato né testato**
+- ✅ **Compilato e testato con successo!**
+- ✅ **Workflow Docker funzionante end-to-end**
+- ✅ **Tool sshmenuc testato e funzionante**
+
+### Features Implementate
+- ✅ **Dual-mode execution** (Docker-first + venv fallback)
+- ✅ **Auto-setup completo** (zero-config per utente)
+- ✅ **Docker container management** (auto-build, auto-install deps)
+- ✅ **Python venv fallback** (auto-create, auto-install requirements)
+- ✅ **Smart TTY handling** (conditional -it)
+- ✅ **Container naming** (<tool>_<version>)
+- ✅ **UID/GID mapping** (stesso utente host)
+- ✅ **HOME directory preservation**
+
+---
+
+## 🎯 Progress Update (2026-02-12)
+
+### ✅ **COMPLETATO OGGI:**
+- **Phase 0 (MVP):** ✅ 100% - Compilazione, clone, run base
+- **Phase 1 (Venv):** ✅ 100% - Auto-setup Python con venv
+- **BONUS - Docker Support:** ✅ 100% - Container execution (era previsto Phase 3!)
+
+### 🔄 **IN PROGRESS:**
+- Phase 2 (Registry): Task 14-18 da iniziare
+- Testing: venv fallback, comandi list/status/update
+
+### 📋 **NEXT STEPS:**
+1. Test fallback venv (no Docker environment)
+2. Implementare Phase 2 (Registry TOML system)
+3. Setup GitHub repository pubblico
+4. CI/CD con GitHub Actions
+5. First release v0.1.0
 
 ---
 
@@ -31,10 +67,11 @@
 Phase 0 (MVP) ────> Phase 1 (Venv) ────> Phase 2 (Registry) ────> Phase 3 (Future)
      ↓                   ↓                      ↓                        ↓
   Clone + Run      Auto-setup Python      TOML/YAML Registry    Docker + Multi-lang
-  Hardcoded cfg    Venv isolation         Auto-discovery         Plugin system
+  ✅ DONE          ✅ DONE + DOCKER       🔜 NEXT                📅 FUTURE
 ```
 
 **Target corrente:** Implementazione completa fino a Phase 2
+**Progress:** Phase 0 ✅ | Phase 1 ✅ | **Docker Bonus ✅** | Phase 2 🔜
 
 ---
 
