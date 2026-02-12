@@ -1,7 +1,6 @@
 //! Git operations using git2 crate
 
-use anyhow::{Context, Result};
-use std::path::Path;
+use anyhow::Result;
 
 use crate::config::tools_dir;
 use crate::error::TuxBoxError;

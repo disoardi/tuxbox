@@ -8,11 +8,17 @@
 //! - `git`: Git operations (clone, pull, status)
 //! - `runner`: Tool execution logic
 //! - `error`: Custom error types
+//! - `environment`: Environment detection (Docker availability)
+//! - `docker`: Docker container management
+//! - `python`: Python venv management (fallback)
 
 mod cli;
 mod config;
+mod docker;
+mod environment;
 mod error;
 mod git;
+mod python;
 mod runner;
 
 use anyhow::Result;

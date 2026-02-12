@@ -1,18 +1,21 @@
 //! Tool execution logic
 
-use anyhow::{Context, Result};
-use std::process::Command;
+use anyhow::Result;
+use colored::Colorize;
 
 use crate::config::ToolConfig;
+use crate::environment::{detect_environment, ExecutionEnvironment};
 use crate::error::TuxBoxError;
-use crate::git;
+use crate::{docker, git, python};
 
 /// Run a tool (clone if needed, then execute)
 ///
-/// MVP Phase 0: Hardcoded tool config for sshmenuc + simple tools
-/// TODO Phase 3: Load from registry
+/// Intelligent execution strategy:
+/// 1. Always check for Docker first (PREFERRED)
+/// 2. If Docker available → run in container (full isolation)
+/// 3. If Docker not available → run in Python venv (fallback)
 pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
-    // MVP: Hardcoded tool configs
+    // Get tool configuration
     let tool_config = get_tool_config(tool_name)?;
 
     // Clone if not present
@@ -28,49 +31,33 @@ pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
     // Get tool path
     let tool_path = git::tool_path(tool_name)?;
 
-    // Execute tool
-    println!("  → Executing {}...", tool_name);
+    // Detect execution environment
+    let env = detect_environment();
 
-    let run_command = if let Some(commands) = &tool_config.commands {
-        &commands.run
-    } else {
-        // Default: try to run main script
-        return Err(TuxBoxError::ExecutionError(
-            "No run command specified for this tool".into(),
-        )
-        .into());
-    };
-
-    // Parse and execute command
-    let parts: Vec<&str> = run_command.split_whitespace().collect();
-    if parts.is_empty() {
-        return Err(TuxBoxError::ExecutionError("Empty run command".into()).into());
+    // Execute based on environment (Docker-first approach)
+    match env {
+        ExecutionEnvironment::Docker => {
+            // PREFERRED: Use Docker for full isolation
+            docker::run_in_docker(&tool_config, &tool_path, args)?;
+        }
+        ExecutionEnvironment::LocalVenv => {
+            // FALLBACK: Use local Python venv
+            if tool_config.tool_type.as_deref() == Some("python") {
+                python::run_in_venv(&tool_config, &tool_path, args)?;
+            } else {
+                // Non-Python tools without Docker - direct execution
+                return Err(TuxBoxError::ExecutionError(
+                    format!(
+                        "Tool type '{}' requires Docker for execution. Please install Docker.",
+                        tool_config.tool_type.as_deref().unwrap_or("unknown")
+                    )
+                )
+                .into());
+            }
+        }
     }
 
-    let mut cmd = Command::new(parts[0]);
-    cmd.current_dir(&tool_path);
-
-    // Add command parts
-    if parts.len() > 1 {
-        cmd.args(&parts[1..]);
-    }
-
-    // Add user arguments
-    cmd.args(args);
-
-    // Execute
-    let status = cmd
-        .status()
-        .context("Failed to execute tool")?;
-
-    if !status.success() {
-        return Err(TuxBoxError::ExecutionError(format!(
-            "Tool exited with status: {}",
-            status
-        ))
-        .into());
-    }
-
+    println!("  {} Tool executed successfully", "✓".green());
     Ok(())
 }
 
@@ -86,8 +73,8 @@ fn get_tool_config(tool_name: &str) -> Result<ToolConfig> {
             tool_type: Some("python".to_string()),
             isolation: None, // Phase 1: will add venv support
             commands: Some(crate::config::Commands {
-                setup: Some("pip install -r requirements.txt".to_string()),
-                run: "python sshmenuc.py".to_string(),
+                setup: Some("pip3 install -r requirements.txt".to_string()),
+                run: "python3 -m sshmenuc".to_string(),
             }),
         }),
         "test-tool" => Ok(ToolConfig {
