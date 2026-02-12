@@ -1,0 +1,61 @@
+//! TuxBox - A meta-tool to manage and run personal tools from Git repositories
+//!
+//! # Architecture
+//!
+//! TuxBox is organized into modules:
+//! - `cli`: Command-line interface definitions (Clap)
+//! - `config`: Configuration management (TOML parsing, context struct)
+//! - `git`: Git operations (clone, pull, status)
+//! - `runner`: Tool execution logic
+//! - `error`: Custom error types
+
+mod cli;
+mod config;
+mod error;
+mod git;
+mod runner;
+
+use anyhow::Result;
+use clap::Parser;
+use cli::Cli;
+use colored::Colorize;
+
+fn main() -> Result<()> {
+    // Parse CLI arguments
+    let cli = Cli::parse();
+
+    // Initialize colored output (respect NO_COLOR environment variable)
+    colored::control::set_override(std::env::var("NO_COLOR").is_err());
+
+    // Execute command
+    match cli.command {
+        cli::Commands::Init { registry_url } => {
+            println!("{} Initializing TuxBox...", "→".cyan());
+            config::init_config(&registry_url)?;
+            println!("{} TuxBox initialized successfully!", "✓".green());
+        }
+        cli::Commands::List => {
+            println!("{} Available tools:", "→".cyan());
+            config::list_tools()?;
+        }
+        cli::Commands::Run { tool, args } => {
+            println!("{} Running tool: {}", "→".cyan(), tool.bold());
+            runner::run_tool(&tool, &args)?;
+        }
+        cli::Commands::Update { tool } => {
+            if let Some(tool_name) = tool {
+                println!("{} Updating tool: {}", "→".cyan(), tool_name.bold());
+                git::update_tool(&tool_name)?;
+            } else {
+                println!("{} Updating all tools...", "→".cyan());
+                git::update_all_tools()?;
+            }
+        }
+        cli::Commands::Status => {
+            println!("{} TuxBox status:", "→".cyan());
+            config::show_status()?;
+        }
+    }
+
+    Ok(())
+}
