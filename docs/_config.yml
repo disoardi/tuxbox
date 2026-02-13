@@ -1,0 +1,29 @@
+# TuxBox Documentation - Jekyll Configuration
+
+title: TuxBox
+description: A meta-tool CLI to manage and run personal tools from Git repositories
+theme: jekyll-theme-cayman
+show_downloads: true
+github:
+  repository_url: https://github.com/disoardi/tuxbox
+  zip_url: https://github.com/disoardi/tuxbox/archive/refs/heads/main.zip
+  tar_url: https://github.com/disoardi/tuxbox/archive/refs/heads/main.tar.gz
+  releases_url: https://github.com/disoardi/tuxbox/releases
+
+# Navigation
+aux_links:
+  "View on GitHub": "https://github.com/disoardi/tuxbox"
+  "Download Latest": "https://github.com/disoardi/tuxbox/releases/latest"
+
+# Plugins
+plugins:
+  - jekyll-relative-links
+
+# Conversion
+markdown: kramdown
+highlighter: rouge
+
+# Kramdown options
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
