@@ -22,6 +22,7 @@ mod git;
 mod python;
 mod registry;
 mod runner;
+mod selfupdate;
 
 use anyhow::Result;
 use clap::Parser;
@@ -79,6 +80,12 @@ fn main() -> Result<()> {
                 registry::sync_all_registries()?;
             }
         },
+        cli::Commands::SelfUpdate { install } => {
+            selfupdate::check_for_update(install)?;
+        }
+        cli::Commands::Version => {
+            selfupdate::show_version()?;
+        }
     }
 
     Ok(())

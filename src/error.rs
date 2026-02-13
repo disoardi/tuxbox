@@ -19,6 +19,9 @@ pub enum TuxBoxError {
     #[error("Tool execution failed: {0}")]
     ExecutionError(String),
 
+    #[error("Update failed: {0}")]
+    UpdateError(String),
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 }

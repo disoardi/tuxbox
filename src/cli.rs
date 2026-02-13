@@ -46,6 +46,16 @@ pub enum Commands {
         #[command(subcommand)]
         action: RegistryAction,
     },
+
+    /// Check for updates and optionally install them
+    SelfUpdate {
+        /// Automatically install the update without prompting
+        #[arg(short, long)]
+        install: bool,
+    },
+
+    /// Show version information
+    Version,
 }
 
 #[derive(Subcommand)]
