@@ -26,17 +26,6 @@ pub fn detect_python() -> Result<String> {
     .into())
 }
 
-/// Get Python version
-pub fn get_python_version(python_cmd: &str) -> Result<String> {
-    let output = Command::new(python_cmd)
-        .arg("--version")
-        .output()
-        .context("Failed to get Python version")?;
-
-    let version = String::from_utf8_lossy(&output.stdout);
-    Ok(version.trim().to_string())
-}
-
 /// Create or verify virtual environment for a tool
 pub fn setup_venv(tool_path: &Path) -> Result<PathBuf> {
     let venv_path = tool_path.join("venv");
@@ -208,13 +197,5 @@ mod tests {
         // Should find python3 or python
         let result = detect_python();
         assert!(result.is_ok() || result.is_err()); // Just verify it runs
-    }
-
-    #[test]
-    fn test_python_version() {
-        if let Ok(python) = detect_python() {
-            let version = get_python_version(&python);
-            assert!(version.is_ok());
-        }
     }
 }
