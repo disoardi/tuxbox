@@ -215,7 +215,38 @@ pub fn list_tools() -> Result<()> {
                     registry.url.dimmed()
                 );
             }
-            println!("\n(Registry tool fetching not implemented yet - coming in Phase 2b)");
+
+            // Load and display tools from all registries
+            use crate::registry;
+            let registry_base_dir = registry_dir()?;
+            let mut all_tools = std::collections::HashMap::new();
+
+            for registry_config in &config.registries {
+                let registry_dir_path = registry_base_dir.join(&registry_config.name);
+                if registry_dir_path.exists() {
+                    if let Ok(registry_data) = registry::load_registry_tools(&registry_dir_path) {
+                        for (tool_name, tool_info) in registry_data.tools {
+                            all_tools.entry(tool_name.clone()).or_insert((tool_info, registry_config.name.clone()));
+                        }
+                    }
+                }
+            }
+
+            if !all_tools.is_empty() {
+                println!("\n{}", "Available tools from registries:".bold());
+                for (tool_name, (tool_info, registry_name)) in all_tools {
+                    let desc = tool_info.description.as_deref().unwrap_or("No description");
+                    println!(
+                        "  {} {} - {} {}",
+                        "•".cyan(),
+                        tool_name.green().bold(),
+                        desc,
+                        format!("(from {})", registry_name).dimmed()
+                    );
+                }
+            } else {
+                println!("\n{}", "No tools found in registries. Run 'tbox registry sync' to fetch.".yellow());
+            }
         }
     } else {
         // Phase 0/1: Show hardcoded tools

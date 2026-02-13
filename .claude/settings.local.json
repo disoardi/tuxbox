@@ -9,7 +9,8 @@
       "Bash(./target/release/tbox:*)",
       "Skill(load-session)",
       "Skill(load-session:*)",
-      "Bash(TUXBOX_FORCE_VENV=1 ./target/release/tbox run:*)"
+      "Bash(TUXBOX_FORCE_VENV=1 ./target/release/tbox run:*)",
+      "Bash(gh repo create:*)"
     ]
   }
 }
