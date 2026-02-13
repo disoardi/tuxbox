@@ -22,14 +22,12 @@ jobs:
             target: x86_64-unknown-linux-gnu
             artifact_name: tbox
             asset_name: tbox-linux-amd64
-          - os: macos-12  # Intel runner
-            target: x86_64-apple-darwin
-            artifact_name: tbox
-            asset_name: tbox-macos-amd64
-          - os: macos-14  # ARM64 runner
+          - os: macos-14  # ARM64 runner (Apple Silicon)
             target: aarch64-apple-darwin
             artifact_name: tbox
             asset_name: tbox-macos-arm64
+          # Note: macOS Intel (x86_64) builds temporarily disabled due to GitHub runner availability issues
+          # Intel Macs can use Rosetta 2 to run ARM64 binaries with minimal performance impact
 
     steps:
     - name: Checkout code
