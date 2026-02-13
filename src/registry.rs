@@ -66,29 +66,51 @@ pub fn sync_registry(registry_config: &RegistryConfig, registry_base_dir: &Path)
 /// Clone a registry repository
 fn clone_registry(registry_config: &RegistryConfig, dest: &Path) -> Result<()> {
     use git2::build::RepoBuilder;
+    use std::process::Command;
 
     // Ensure parent directory exists
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).context("Failed to create registry directory")?;
     }
 
-    // Clone based on auth type
-    match registry_config.auth_type {
+    // Try git2 first (native Rust implementation)
+    let git2_result = match registry_config.auth_type {
         AuthType::Ssh => {
-            // For SSH, git2 will use SSH agent or ~/.ssh/config automatically
             RepoBuilder::new()
                 .clone(&registry_config.url, dest)
-                .context("Failed to clone registry via SSH")?;
+                .context("git2 SSH clone failed")
         }
         AuthType::Https => {
-            // For HTTPS, clone directly (no auth needed for public repos)
             RepoBuilder::new()
                 .clone(&registry_config.url, dest)
-                .context("Failed to clone registry via HTTPS")?;
+                .context("git2 HTTPS clone failed")
         }
+    };
+
+    // If git2 succeeds, we're done
+    if git2_result.is_ok() {
+        println!("  {} Registry cloned successfully", "✓".green());
+        return Ok(());
     }
 
-    println!("  {} Registry cloned successfully", "✓".green());
+    // Fallback: use system git command (works better with SSH configs)
+    println!("  {} git2 failed, trying system git command...", "→".yellow());
+
+    let status = Command::new("git")
+        .args(["clone", &registry_config.url, dest.to_str().unwrap()])
+        .status()
+        .context("Failed to execute git command")?;
+
+    if !status.success() {
+        anyhow::bail!(
+            "Failed to clone registry. Both git2 and system git failed.\n\
+             URL: {}\n\
+             Ensure SSH keys are configured for SSH URLs.",
+            registry_config.url
+        );
+    }
+
+    println!("  {} Registry cloned successfully (via git command)", "✓".green());
     Ok(())
 }
 
