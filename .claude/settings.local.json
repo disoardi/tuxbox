@@ -6,7 +6,10 @@
       "Bash(docker version:*)",
       "Bash(./target/release/tbox run:*)",
       "Bash(./target/release/tbox list:*)",
-      "Bash(./target/release/tbox:*)"
+      "Bash(./target/release/tbox:*)",
+      "Skill(load-session)",
+      "Skill(load-session:*)",
+      "Bash(TUXBOX_FORCE_VENV=1 ./target/release/tbox run:*)"
     ]
   }
 }

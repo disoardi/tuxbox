@@ -65,32 +65,52 @@ pub fn setup_venv(tool_path: &Path) -> Result<PathBuf> {
     Ok(venv_path)
 }
 
-/// Install requirements.txt in the venv
+/// Install dependencies in the venv (supports requirements.txt and pyproject.toml)
 pub fn install_requirements(venv_path: &Path, tool_path: &Path) -> Result<()> {
     let requirements_path = tool_path.join("requirements.txt");
-
-    if !requirements_path.exists() {
-        // No requirements.txt, skip
-        return Ok(());
-    }
-
-    println!("  {} Installing Python dependencies...", "→".cyan());
+    let pyproject_path = tool_path.join("pyproject.toml");
 
     // Get pip executable from venv
     let pip = get_venv_executable(venv_path, "pip")?;
 
-    // Install requirements
-    let status = Command::new(pip)
-        .args(["install", "-r", "requirements.txt"])
-        .current_dir(tool_path)
-        .status()
-        .context("Failed to install requirements")?;
+    // Check for pyproject.toml first (modern approach)
+    if pyproject_path.exists() {
+        println!("  {} Installing Python package with dependencies...", "→".cyan());
 
-    if !status.success() {
-        anyhow::bail!("Failed to install Python dependencies");
+        // Install in editable mode with dependencies
+        let status = Command::new(&pip)
+            .args(["install", "-e", "."])
+            .current_dir(tool_path)
+            .status()
+            .context("Failed to install package")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to install Python package");
+        }
+
+        println!("  {} Package and dependencies installed", "✓".green());
+        return Ok(());
     }
 
-    println!("  {} Dependencies installed", "✓".green());
+    // Fallback to requirements.txt
+    if requirements_path.exists() {
+        println!("  {} Installing Python dependencies...", "→".cyan());
+
+        let status = Command::new(&pip)
+            .args(["install", "-r", "requirements.txt"])
+            .current_dir(tool_path)
+            .status()
+            .context("Failed to install requirements")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to install Python dependencies");
+        }
+
+        println!("  {} Dependencies installed", "✓".green());
+        return Ok(());
+    }
+
+    // No dependency files found, skip
     Ok(())
 }
 

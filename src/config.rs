@@ -99,32 +99,81 @@ pub fn load_config() -> Result<Config> {
     Ok(config)
 }
 
-/// List available tools (stub for MVP)
+/// List available tools (Phase 0/1: hardcoded, Phase 2: from registry)
 pub fn list_tools() -> Result<()> {
-    let config = load_config()?;
-    println!("Registry: {}", config.registry_url);
-    println!("\n(Registry fetching not implemented yet - coming in Phase 3)");
+    use colored::Colorize;
 
-    // TODO: Fetch and parse registry
+    // Try to load registry config (Phase 2)
+    if let Ok(config) = load_config() {
+        println!("Registry: {}", config.registry_url);
+        println!("\n(Registry fetching not implemented yet - coming in Phase 2)");
+    } else {
+        // Phase 0/1: Show hardcoded tools
+        println!("Available tools (hardcoded):");
+        println!("  {} sshmenuc - SSH connection manager (Python)", "•".cyan());
+        println!("  {} test-tool - Test tool (Bash)", "•".cyan());
+    }
+
+    // Show installed tools
+    let tools_dir = tools_dir()?;
+    if tools_dir.exists() {
+        let entries: Vec<_> = fs::read_dir(&tools_dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().ok().map(|t| t.is_dir()).unwrap_or(false))
+            .collect();
+
+        if !entries.is_empty() {
+            println!("\nInstalled tools:");
+            for entry in entries {
+                let tool_name = entry.file_name().to_string_lossy().to_string();
+                println!("  {} {} (installed)", "✓".green(), tool_name.bold());
+            }
+        }
+    }
+
     Ok(())
 }
 
-/// Show TuxBox status (stub for MVP)
+/// Show TuxBox status (Phase 0/1: local info, Phase 2: with registry)
 pub fn show_status() -> Result<()> {
-    let config = load_config()?;
-    println!("Registry: {}", config.registry_url);
+    use colored::Colorize;
 
+    println!("TuxBox Status");
+    println!("=============\n");
+
+    // Base directory
+    let base_dir = tuxbox_home()?;
+    println!("Base directory: {}", base_dir.display());
+
+    // Tools directory
     let tools_dir = tools_dir()?;
+    println!("Tools directory: {}", tools_dir.display());
+
+    // Registry status
+    if let Ok(config) = load_config() {
+        println!("Registry: {} (initialized)", config.registry_url.green());
+    } else {
+        println!("Registry: {} (use 'tbox init <url>' to configure)", "not initialized".yellow());
+    }
+
+    // Installed tools
     if tools_dir.exists() {
-        println!("\nInstalled tools:");
-        for entry in fs::read_dir(tools_dir)? {
-            let entry = entry?;
-            if entry.file_type()?.is_dir() {
-                println!("  - {}", entry.file_name().to_string_lossy());
+        let entries: Vec<_> = fs::read_dir(&tools_dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().ok().map(|t| t.is_dir()).unwrap_or(false))
+            .collect();
+
+        if !entries.is_empty() {
+            println!("\n{} installed tools:", entries.len());
+            for entry in entries {
+                let tool_name = entry.file_name().to_string_lossy().to_string();
+                println!("  {} {}", "•".cyan(), tool_name.bold());
             }
+        } else {
+            println!("\n{}", "No tools installed yet.".yellow());
         }
     } else {
-        println!("\nNo tools installed yet.");
+        println!("\n{}", "No tools installed yet.".yellow());
     }
 
     Ok(())

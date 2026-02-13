@@ -25,6 +25,11 @@ pub enum ExecutionEnvironment {
 
 /// Determine the best execution environment
 pub fn detect_environment() -> ExecutionEnvironment {
+    // Allow forcing venv for testing purposes
+    if std::env::var("TUXBOX_FORCE_VENV").is_ok() {
+        return ExecutionEnvironment::LocalVenv;
+    }
+
     if is_docker_available() {
         ExecutionEnvironment::Docker
     } else {
