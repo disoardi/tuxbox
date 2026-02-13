@@ -11,6 +11,7 @@
 //! - `environment`: Environment detection (Docker availability)
 //! - `docker`: Docker container management
 //! - `python`: Python venv management (fallback)
+//! - `registry`: Registry management and tool resolution
 
 mod cli;
 mod config;
@@ -19,6 +20,7 @@ mod environment;
 mod error;
 mod git;
 mod python;
+mod registry;
 mod runner;
 
 use anyhow::Result;
@@ -58,9 +60,25 @@ fn main() -> Result<()> {
             }
         }
         cli::Commands::Status => {
-            println!("{} TuxBox status:", "→".cyan());
             config::show_status()?;
         }
+        cli::Commands::Registry { action } => match action {
+            cli::RegistryAction::List => {
+                config::list_registries()?;
+            }
+            cli::RegistryAction::Add { name, url, priority } => {
+                println!("{} Adding registry '{}'...", "→".cyan(), name.bold());
+                config::add_registry(&name, &url, priority)?;
+            }
+            cli::RegistryAction::Remove { name } => {
+                println!("{} Removing registry '{}'...", "→".cyan(), name.bold());
+                config::remove_registry(&name)?;
+            }
+            cli::RegistryAction::Sync => {
+                println!("{} Syncing all registries...", "→".cyan());
+                registry::sync_all_registries()?;
+            }
+        },
     }
 
     Ok(())

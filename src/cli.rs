@@ -40,4 +40,38 @@ pub enum Commands {
 
     /// Show TuxBox status and installed tools
     Status,
+
+    /// Manage registries (add, remove, list, sync)
+    Registry {
+        #[command(subcommand)]
+        action: RegistryAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum RegistryAction {
+    /// List all configured registries
+    List,
+
+    /// Add a new registry
+    Add {
+        /// Name for the registry
+        name: String,
+
+        /// Registry repository URL
+        url: String,
+
+        /// Priority (higher = checked first, default: 100)
+        #[arg(short, long)]
+        priority: Option<u32>,
+    },
+
+    /// Remove a registry
+    Remove {
+        /// Name of the registry to remove
+        name: String,
+    },
+
+    /// Sync (clone/update) all registries
+    Sync,
 }

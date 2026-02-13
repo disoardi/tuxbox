@@ -61,10 +61,43 @@ pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Get hardcoded tool configuration (MVP Phase 0)
+/// Get tool configuration from registry or fallback to hardcoded
 ///
-/// TODO Phase 3: Load from registry instead
+/// Phase 2: Load from multi-registry with priority-based resolution
+/// Fallback: Hardcoded tools for backward compatibility
 fn get_tool_config(tool_name: &str) -> Result<ToolConfig> {
+    use crate::{config, registry};
+
+    // Try loading from registry first (Phase 2)
+    if let Ok(cfg) = config::load_config() {
+        if !cfg.registries.is_empty() {
+            let registry_base_dir = config::registry_dir()?;
+
+            // Sync registries if needed (clone/update)
+            for registry_config in &cfg.registries {
+                let _ = registry::sync_registry(registry_config, &registry_base_dir);
+            }
+
+            // Find tool in registries (priority-based)
+            match registry::find_tool_in_registries(tool_name, &cfg.registries, &registry_base_dir) {
+                Ok((tool, registry_name)) => {
+                    println!("  {} Found in registry: {}", "→".cyan(), registry_name.bold());
+                    return Ok(registry::registry_tool_to_config(&tool));
+                }
+                Err(_) => {
+                    // Not found in registry, try hardcoded fallback
+                    println!("  {} Tool not in registry, trying hardcoded...", "→".yellow());
+                }
+            }
+        }
+    }
+
+    // Fallback to hardcoded tools (Phase 0/1 compatibility)
+    get_hardcoded_tool_config(tool_name)
+}
+
+/// Get hardcoded tool configuration (backward compatibility)
+fn get_hardcoded_tool_config(tool_name: &str) -> Result<ToolConfig> {
     match tool_name {
         "sshmenuc" => Ok(ToolConfig {
             name: "sshmenuc".to_string(),
@@ -72,7 +105,7 @@ fn get_tool_config(tool_name: &str) -> Result<ToolConfig> {
             branch: Some("main".to_string()),
             version: Some("1.1.0".to_string()),
             tool_type: Some("python".to_string()),
-            isolation: None, // Phase 1: will add venv support
+            isolation: None,
             commands: Some(crate::config::Commands {
                 setup: Some("pip3 install -r requirements.txt".to_string()),
                 run: "python3 -m sshmenuc".to_string(),

@@ -1,0 +1,31 @@
+# TuxBox Registry - Personal Tools
+# This is an example tools.toml for a private registry
+
+[tools.sshmenuc]
+name = "sshmenuc"
+repo = "https://github.com/disoardi/sshmenuc"
+branch = "main"
+version = "1.1.0"
+type = "python"
+description = "SSH connection manager with interactive TUI menu"
+
+[tools.sshmenuc.commands]
+run = "python3 -m sshmenuc"
+
+[tools.sshmenuc.dependencies]
+python = ">=3.8"
+requirements = "requirements.txt"
+
+# Example: Add more tools below
+#
+# [tools.another-tool]
+# name = "another-tool"
+# repo = "git@github.com:user/another-tool.git"
+# branch = "main"
+# version = "1.0.0"
+# type = "python"
+# description = "Another tool description"
+#
+# [tools.another-tool.commands]
+# run = "python3 script.py"
+# setup = "pip install -r requirements.txt"
