@@ -22,7 +22,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
             artifact_name: tbox
             asset_name: tbox-linux-amd64
-          - os: macos-13  # Intel runner
+          - os: macos-12  # Intel runner
             target: x86_64-apple-darwin
             artifact_name: tbox
             asset_name: tbox-macos-amd64
