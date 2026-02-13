@@ -249,10 +249,15 @@ pub fn list_tools() -> Result<()> {
             }
         }
     } else {
-        // Phase 0/1: Show hardcoded tools
-        println!("Available tools (hardcoded):");
-        println!("  {} sshmenuc - SSH connection manager (Python)", "•".cyan());
-        println!("  {} test-tool - Test tool (Bash)", "•".cyan());
+        // Not initialized - guide user to init
+        println!("{}", "TuxBox not initialized.".yellow());
+        println!("\nTo get started:");
+        println!("  {} Initialize with a registry:", "1.".cyan());
+        println!("     tbox init <registry-url>");
+        println!("\n  {} Example:", "2.".cyan());
+        println!("     tbox init git@github.com:user/tuxbox-registry.git");
+        println!("\nFor help creating a registry, see: docs/QUICK_START.md");
+        return Ok(());
     }
 
     // Show installed tools
