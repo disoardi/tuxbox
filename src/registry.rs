@@ -47,16 +47,27 @@ pub struct RegistryDependencies {
 }
 
 /// Clone or update a registry
-pub fn sync_registry(registry_config: &RegistryConfig, registry_base_dir: &Path) -> Result<PathBuf> {
+pub fn sync_registry(
+    registry_config: &RegistryConfig,
+    registry_base_dir: &Path,
+) -> Result<PathBuf> {
     let registry_dir = registry_base_dir.join(&registry_config.name);
 
     if registry_dir.exists() {
         // Already cloned, do git pull
-        println!("  {} Updating registry '{}'...", "→".cyan(), registry_config.name);
+        println!(
+            "  {} Updating registry '{}'...",
+            "→".cyan(),
+            registry_config.name
+        );
         update_registry(&registry_dir)?;
     } else {
         // Clone registry
-        println!("  {} Cloning registry '{}'...", "→".cyan(), registry_config.name);
+        println!(
+            "  {} Cloning registry '{}'...",
+            "→".cyan(),
+            registry_config.name
+        );
         clone_registry(registry_config, &registry_dir)?;
     }
 
@@ -75,16 +86,12 @@ fn clone_registry(registry_config: &RegistryConfig, dest: &Path) -> Result<()> {
 
     // Try git2 first (native Rust implementation)
     let git2_result = match registry_config.auth_type {
-        AuthType::Ssh => {
-            RepoBuilder::new()
-                .clone(&registry_config.url, dest)
-                .context("git2 SSH clone failed")
-        }
-        AuthType::Https => {
-            RepoBuilder::new()
-                .clone(&registry_config.url, dest)
-                .context("git2 HTTPS clone failed")
-        }
+        AuthType::Ssh => RepoBuilder::new()
+            .clone(&registry_config.url, dest)
+            .context("git2 SSH clone failed"),
+        AuthType::Https => RepoBuilder::new()
+            .clone(&registry_config.url, dest)
+            .context("git2 HTTPS clone failed"),
     };
 
     // If git2 succeeds, we're done
@@ -94,7 +101,10 @@ fn clone_registry(registry_config: &RegistryConfig, dest: &Path) -> Result<()> {
     }
 
     // Fallback: use system git command (works better with SSH configs)
-    println!("  {} git2 failed, trying system git command...", "→".yellow());
+    println!(
+        "  {} git2 failed, trying system git command...",
+        "→".yellow()
+    );
 
     let status = Command::new("git")
         .args(["clone", &registry_config.url, dest.to_str().unwrap()])
@@ -110,7 +120,10 @@ fn clone_registry(registry_config: &RegistryConfig, dest: &Path) -> Result<()> {
         );
     }
 
-    println!("  {} Registry cloned successfully (via git command)", "✓".green());
+    println!(
+        "  {} Registry cloned successfully (via git command)",
+        "✓".green()
+    );
     Ok(())
 }
 
@@ -121,7 +134,9 @@ fn update_registry(registry_dir: &Path) -> Result<()> {
     let repo = Repository::open(registry_dir).context("Failed to open registry repository")?;
 
     // Fetch from origin
-    let mut remote = repo.find_remote("origin").context("Failed to find remote 'origin'")?;
+    let mut remote = repo
+        .find_remote("origin")
+        .context("Failed to find remote 'origin'")?;
     remote
         .fetch(&["main"], None, None)
         .context("Failed to fetch from remote")?;
@@ -217,13 +232,19 @@ pub fn sync_all_registries() -> Result<()> {
 
     let config_result = config::load_config();
     if config_result.is_err() {
-        println!("{}", "No registries configured. Use 'tbox init <url>' to add one.".yellow());
+        println!(
+            "{}",
+            "No registries configured. Use 'tbox init <url>' to add one.".yellow()
+        );
         return Ok(());
     }
 
     let config_data = config_result?;
     if config_data.registries.is_empty() {
-        println!("{}", "No registries configured. Use 'tbox init <url>' to add one.".yellow());
+        println!(
+            "{}",
+            "No registries configured. Use 'tbox init <url>' to add one.".yellow()
+        );
         return Ok(());
     }
 

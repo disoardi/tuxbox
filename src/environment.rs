@@ -5,9 +5,7 @@ use std::process::Command;
 /// Check if Docker is available and running
 pub fn is_docker_available() -> bool {
     // Try to run `docker version` to check if Docker daemon is available
-    let result = Command::new("docker")
-        .arg("version")
-        .output();
+    let result = Command::new("docker").arg("version").output();
 
     match result {
         Ok(output) => output.status.success(),

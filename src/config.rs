@@ -9,7 +9,8 @@ use crate::error::TuxBoxError;
 
 /// TuxBox home directory (~/.tuxbox)
 pub fn tuxbox_home() -> Result<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| TuxBoxError::ConfigError("Home directory not found".into()))?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| TuxBoxError::ConfigError("Home directory not found".into()))?;
     Ok(home.join(".tuxbox"))
 }
 
@@ -95,12 +96,9 @@ pub fn init_config(registry_url: &str) -> Result<()> {
     let tuxbox_home = tuxbox_home()?;
 
     // Create directories
-    fs::create_dir_all(&tuxbox_home)
-        .context("Failed to create TuxBox home directory")?;
-    fs::create_dir_all(tools_dir()?)
-        .context("Failed to create tools directory")?;
-    fs::create_dir_all(registry_dir()?)
-        .context("Failed to create registry directory")?;
+    fs::create_dir_all(&tuxbox_home).context("Failed to create TuxBox home directory")?;
+    fs::create_dir_all(tools_dir()?).context("Failed to create tools directory")?;
+    fs::create_dir_all(registry_dir()?).context("Failed to create registry directory")?;
 
     // Detect auth type from URL
     let auth_type = if registry_url.starts_with("git@") || registry_url.starts_with("ssh://") {
@@ -132,12 +130,13 @@ pub fn init_config(registry_url: &str) -> Result<()> {
     }
 
     // Sort by priority (higher priority first)
-    config.registries.sort_by(|a, b| b.priority.cmp(&a.priority));
+    config
+        .registries
+        .sort_by(|a, b| b.priority.cmp(&a.priority));
 
     // Write config
     let config_toml = toml::to_string_pretty(&config)?;
-    fs::write(config_file()?, config_toml)
-        .context("Failed to write config file")?;
+    fs::write(config_file()?, config_toml).context("Failed to write config file")?;
 
     Ok(())
 }
@@ -149,9 +148,7 @@ fn extract_registry_name(url: &str) -> String {
     // - https://github.com/user/repo -> repo
     // - https://github.com/user/repo.git -> repo
 
-    let cleaned = url
-        .trim_end_matches(".git")
-        .trim_end_matches('/');
+    let cleaned = url.trim_end_matches(".git").trim_end_matches('/');
 
     if let Some(name) = cleaned.split('/').last() {
         name.to_string()
@@ -226,7 +223,9 @@ pub fn list_tools() -> Result<()> {
                 if registry_dir_path.exists() {
                     if let Ok(registry_data) = registry::load_registry_tools(&registry_dir_path) {
                         for (tool_name, tool_info) in registry_data.tools {
-                            all_tools.entry(tool_name.clone()).or_insert((tool_info, registry_config.name.clone()));
+                            all_tools
+                                .entry(tool_name.clone())
+                                .or_insert((tool_info, registry_config.name.clone()));
                         }
                     }
                 }
@@ -245,7 +244,10 @@ pub fn list_tools() -> Result<()> {
                     );
                 }
             } else {
-                println!("\n{}", "No tools found in registries. Run 'tbox registry sync' to fetch.".yellow());
+                println!(
+                    "\n{}",
+                    "No tools found in registries. Run 'tbox registry sync' to fetch.".yellow()
+                );
             }
         }
     } else {
@@ -298,7 +300,11 @@ pub fn show_status() -> Result<()> {
     // Registry status
     if let Ok(config) = load_config() {
         if !config.registries.is_empty() {
-            println!("\n{} ({} configured):", "Registries:".bold(), config.registries.len());
+            println!(
+                "\n{} ({} configured):",
+                "Registries:".bold(),
+                config.registries.len()
+            );
             for registry in &config.registries {
                 let auth_icon = match registry.auth_type {
                     AuthType::Ssh => "🔐",
@@ -316,7 +322,11 @@ pub fn show_status() -> Result<()> {
             println!("\n{} {}", "Registries:".bold(), "none configured".yellow());
         }
     } else {
-        println!("\n{} {} (use 'tbox init <url>' to configure)", "Registries:".bold(), "not initialized".yellow());
+        println!(
+            "\n{} {} (use 'tbox init <url>' to configure)",
+            "Registries:".bold(),
+            "not initialized".yellow()
+        );
     }
 
     // Installed tools
@@ -333,10 +343,18 @@ pub fn show_status() -> Result<()> {
                 println!("  {} {}", "•".cyan(), tool_name.bold());
             }
         } else {
-            println!("\n{} {}", "Tools:".bold(), "No tools installed yet.".yellow());
+            println!(
+                "\n{} {}",
+                "Tools:".bold(),
+                "No tools installed yet.".yellow()
+            );
         }
     } else {
-        println!("\n{} {}", "Tools:".bold(), "No tools installed yet.".yellow());
+        println!(
+            "\n{} {}",
+            "Tools:".bold(),
+            "No tools installed yet.".yellow()
+        );
     }
 
     Ok(())
@@ -353,7 +371,10 @@ pub fn add_registry(name: &str, url: &str, priority: Option<u32>) -> Result<()> 
 
     // Check if registry with this name already exists
     if config.registries.iter().any(|r| r.name == name) {
-        anyhow::bail!("Registry '{}' already exists. Use a different name or remove it first.", name);
+        anyhow::bail!(
+            "Registry '{}' already exists. Use a different name or remove it first.",
+            name
+        );
     }
 
     // Detect auth type
@@ -372,13 +393,19 @@ pub fn add_registry(name: &str, url: &str, priority: Option<u32>) -> Result<()> 
     });
 
     // Sort by priority
-    config.registries.sort_by(|a, b| b.priority.cmp(&a.priority));
+    config
+        .registries
+        .sort_by(|a, b| b.priority.cmp(&a.priority));
 
     // Save config
     let config_toml = toml::to_string_pretty(&config)?;
     fs::write(config_file()?, config_toml)?;
 
-    println!("{} Registry '{}' added successfully!", "✓".green(), name.green().bold());
+    println!(
+        "{} Registry '{}' added successfully!",
+        "✓".green(),
+        name.green().bold()
+    );
     Ok(())
 }
 
@@ -399,7 +426,11 @@ pub fn remove_registry(name: &str) -> Result<()> {
     let config_toml = toml::to_string_pretty(&config)?;
     fs::write(config_file()?, config_toml)?;
 
-    println!("{} Registry '{}' removed successfully!", "✓".green(), name.yellow());
+    println!(
+        "{} Registry '{}' removed successfully!",
+        "✓".green(),
+        name.yellow()
+    );
     Ok(())
 }
 
@@ -410,7 +441,10 @@ pub fn list_registries() -> Result<()> {
     let config = load_config()?;
 
     if config.registries.is_empty() {
-        println!("{}", "No registries configured. Use 'tbox init <url>' to add one.".yellow());
+        println!(
+            "{}",
+            "No registries configured. Use 'tbox init <url>' to add one.".yellow()
+        );
         return Ok(());
     }
 
@@ -427,7 +461,12 @@ pub fn list_registries() -> Result<()> {
             AuthType::Https => "HTTPS",
         };
 
-        println!("{} {} (priority: {})", auth_icon, registry.name.cyan().bold(), registry.priority);
+        println!(
+            "{} {} (priority: {})",
+            auth_icon,
+            registry.name.cyan().bold(),
+            registry.priority
+        );
         println!("  {} URL: {}", "→".dimmed(), registry.url.dimmed());
         println!("  {} Auth: {}", "→".dimmed(), auth_label.dimmed());
         println!();

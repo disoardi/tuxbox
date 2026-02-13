@@ -67,7 +67,11 @@ fn main() -> Result<()> {
             cli::RegistryAction::List => {
                 config::list_registries()?;
             }
-            cli::RegistryAction::Add { name, url, priority } => {
+            cli::RegistryAction::Add {
+                name,
+                url,
+                priority,
+            } => {
                 println!("{} Adding registry '{}'...", "→".cyan(), name.bold());
                 config::add_registry(&name, &url, priority)?;
             }

@@ -8,11 +8,7 @@ use std::process::Command;
 use crate::config::ToolConfig;
 
 /// Run a Python tool inside a Docker container
-pub fn run_in_docker(
-    tool_config: &ToolConfig,
-    tool_path: &Path,
-    args: &[String],
-) -> Result<()> {
+pub fn run_in_docker(tool_config: &ToolConfig, tool_path: &Path, args: &[String]) -> Result<()> {
     println!("  {} Using Docker for isolated execution", "🐳".cyan());
 
     // Determine Python version from tool or use default
@@ -109,8 +105,7 @@ CMD ["python3"]
 
     // Write temporary Dockerfile
     let dockerfile_path = tool_path.join("Dockerfile.tuxbox");
-    std::fs::write(&dockerfile_path, dockerfile_content)
-        .context("Failed to write Dockerfile")?;
+    std::fs::write(&dockerfile_path, dockerfile_content).context("Failed to write Dockerfile")?;
 
     // Build image
     let status = Command::new("docker")
@@ -188,10 +183,14 @@ fn run_container(
 
     // Mount volumes for tool access to configs and data
     cmd.args([
-        "-v", &format!("{}/.ssh:{}/.ssh:ro", home, home),        // SSH configs (read-only)
-        "-v", &format!("{}/.config:{}/.config", home, home),     // App configs (read-write)
-        "-v", &format!("{}:{}", home, home),                     // Home directory (preserves paths)
-        "-w", "/app",
+        "-v",
+        &format!("{}/.ssh:{}/.ssh:ro", home, home), // SSH configs (read-only)
+        "-v",
+        &format!("{}/.config:{}/.config", home, home), // App configs (read-write)
+        "-v",
+        &format!("{}:{}", home, home), // Home directory (preserves paths)
+        "-w",
+        "/app",
     ]);
 
     // Add the image
@@ -209,9 +208,7 @@ fn run_container(
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
-    let status = cmd
-        .status()
-        .context("Failed to run Docker container")?;
+    let status = cmd.status().context("Failed to run Docker container")?;
 
     if !status.success() {
         anyhow::bail!("Tool exited with status: {}", status);

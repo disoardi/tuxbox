@@ -36,8 +36,16 @@ pub fn check_for_update(auto_install: bool) -> Result<()> {
     let latest_version = parse_version(&release.tag_name)?;
     let current_version = parse_version(&format!("v{}", CURRENT_VERSION))?;
 
-    println!("  {} Current version: {}", "→".cyan(), CURRENT_VERSION.bold());
-    println!("  {} Latest version:  {}", "→".cyan(), latest_version.bold());
+    println!(
+        "  {} Current version: {}",
+        "→".cyan(),
+        CURRENT_VERSION.bold()
+    );
+    println!(
+        "  {} Latest version:  {}",
+        "→".cyan(),
+        latest_version.bold()
+    );
 
     // Compare versions
     let current = semver::Version::parse(&current_version)?;
@@ -48,7 +56,10 @@ pub fn check_for_update(auto_install: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!("{}", format!("🎉 New version available: {}", release.name).yellow());
+    println!(
+        "{}",
+        format!("🎉 New version available: {}", release.name).yellow()
+    );
 
     if !auto_install {
         println!("\nTo update, run:");
@@ -95,14 +106,20 @@ fn install_update(release: &GithubRelease) -> Result<()> {
 
     // Detect current platform
     let asset_name = get_platform_asset_name()?;
-    println!("  {} Detecting platform: {}", "→".cyan(), asset_name.dimmed());
+    println!(
+        "  {} Detecting platform: {}",
+        "→".cyan(),
+        asset_name.dimmed()
+    );
 
     // Find matching asset
     let asset = release
         .assets
         .iter()
         .find(|a| a.name.starts_with(&asset_name))
-        .ok_or_else(|| TuxBoxError::UpdateError(format!("No binary found for platform: {}", asset_name)))?;
+        .ok_or_else(|| {
+            TuxBoxError::UpdateError(format!("No binary found for platform: {}", asset_name))
+        })?;
 
     println!("  {} Downloading: {}", "→".cyan(), asset.name.bold());
 
@@ -113,7 +130,10 @@ fn install_update(release: &GithubRelease) -> Result<()> {
     replace_current_binary(&binary_data)?;
 
     println!("{}", "✓ Update installed successfully!".green());
-    println!("\n{}", "Please restart tbox to use the new version.".yellow());
+    println!(
+        "\n{}",
+        "Please restart tbox to use the new version.".yellow()
+    );
 
     Ok(())
 }
@@ -163,8 +183,7 @@ fn replace_current_binary(tarball_data: &[u8]) -> Result<()> {
 
             // Create backup
             let backup_path = current_exe.with_extension("bak");
-            fs::copy(&current_exe, &backup_path)
-                .context("Failed to create backup")?;
+            fs::copy(&current_exe, &backup_path).context("Failed to create backup")?;
 
             // Extract to temp location first
             let temp_path = current_exe.with_extension("tmp");
@@ -181,11 +200,14 @@ fn replace_current_binary(tarball_data: &[u8]) -> Result<()> {
             }
 
             // Replace current binary
-            fs::rename(&temp_path, &current_exe)
-                .context("Failed to replace binary")?;
+            fs::rename(&temp_path, &current_exe).context("Failed to replace binary")?;
 
             println!("  {} Binary replaced successfully", "✓".green());
-            println!("  {} Backup saved to: {}", "→".dimmed(), backup_path.display().to_string().dimmed());
+            println!(
+                "  {} Backup saved to: {}",
+                "→".dimmed(),
+                backup_path.display().to_string().dimmed()
+            );
 
             return Ok(());
         }
@@ -204,11 +226,9 @@ fn get_platform_asset_name() -> Result<String> {
         ("macos", "x86_64") => "tbox-macos-amd64",
         ("macos", "aarch64") => "tbox-macos-arm64",
         _ => {
-            return Err(TuxBoxError::UpdateError(format!(
-                "Unsupported platform: {} {}",
-                os, arch
-            ))
-            .into());
+            return Err(
+                TuxBoxError::UpdateError(format!("Unsupported platform: {} {}", os, arch)).into(),
+            );
         }
     };
 

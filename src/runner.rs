@@ -4,7 +4,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::config::ToolConfig;
-use crate::environment::{detect_environment, ExecutionEnvironment};
+use crate::environment::{ExecutionEnvironment, detect_environment};
 use crate::error::TuxBoxError;
 use crate::{docker, git, python};
 
@@ -21,11 +21,7 @@ pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
     // Clone if not present
     if !git::is_tool_cloned(tool_name)? {
         println!("  Tool not installed, cloning...");
-        git::clone_tool(
-            tool_name,
-            &tool_config.repo,
-            tool_config.branch.as_deref(),
-        )?;
+        git::clone_tool(tool_name, &tool_config.repo, tool_config.branch.as_deref())?;
     }
 
     // Get tool path
@@ -46,12 +42,10 @@ pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
                 python::run_in_venv(&tool_config, &tool_path, args)?;
             } else {
                 // Non-Python tools without Docker - direct execution
-                return Err(TuxBoxError::ExecutionError(
-                    format!(
-                        "Tool type '{}' requires Docker for execution. Please install Docker.",
-                        tool_config.tool_type.as_deref().unwrap_or("unknown")
-                    )
-                )
+                return Err(TuxBoxError::ExecutionError(format!(
+                    "Tool type '{}' requires Docker for execution. Please install Docker.",
+                    tool_config.tool_type.as_deref().unwrap_or("unknown")
+                ))
                 .into());
             }
         }
@@ -79,14 +73,22 @@ fn get_tool_config(tool_name: &str) -> Result<ToolConfig> {
             }
 
             // Find tool in registries (priority-based)
-            match registry::find_tool_in_registries(tool_name, &cfg.registries, &registry_base_dir) {
+            match registry::find_tool_in_registries(tool_name, &cfg.registries, &registry_base_dir)
+            {
                 Ok((tool, registry_name)) => {
-                    println!("  {} Found in registry: {}", "→".cyan(), registry_name.bold());
+                    println!(
+                        "  {} Found in registry: {}",
+                        "→".cyan(),
+                        registry_name.bold()
+                    );
                     return Ok(registry::registry_tool_to_config(&tool));
                 }
                 Err(_) => {
                     // Not found in registry, try hardcoded fallback
-                    println!("  {} Tool not in registry, trying hardcoded...", "→".yellow());
+                    println!(
+                        "  {} Tool not in registry, trying hardcoded...",
+                        "→".yellow()
+                    );
                 }
             }
         }

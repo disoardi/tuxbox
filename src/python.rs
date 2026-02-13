@@ -20,10 +20,10 @@ pub fn detect_python() -> Result<String> {
         return Ok("python".to_string());
     }
 
-    Err(TuxBoxError::ExecutionError(
-        "Python not found. Please install Python 3.8+".to_string(),
+    Err(
+        TuxBoxError::ExecutionError("Python not found. Please install Python 3.8+".to_string())
+            .into(),
     )
-    .into())
 }
 
 /// Create or verify virtual environment for a tool
@@ -64,7 +64,10 @@ pub fn install_requirements(venv_path: &Path, tool_path: &Path) -> Result<()> {
 
     // Check for pyproject.toml first (modern approach)
     if pyproject_path.exists() {
-        println!("  {} Installing Python package with dependencies...", "→".cyan());
+        println!(
+            "  {} Installing Python package with dependencies...",
+            "→".cyan()
+        );
 
         // Install in editable mode with dependencies
         let status = Command::new(&pip)
@@ -104,11 +107,7 @@ pub fn install_requirements(venv_path: &Path, tool_path: &Path) -> Result<()> {
 }
 
 /// Run a Python tool using the venv
-pub fn run_in_venv(
-    tool_config: &ToolConfig,
-    tool_path: &Path,
-    args: &[String],
-) -> Result<()> {
+pub fn run_in_venv(tool_config: &ToolConfig, tool_path: &Path, args: &[String]) -> Result<()> {
     println!("  {} Using local Python venv", "🐍".cyan());
 
     // Setup venv
@@ -127,10 +126,9 @@ pub fn run_in_venv(
     let run_command = if let Some(commands) = &tool_config.commands {
         &commands.run
     } else {
-        return Err(TuxBoxError::ExecutionError(
-            "No run command specified for this tool".into(),
-        )
-        .into());
+        return Err(
+            TuxBoxError::ExecutionError("No run command specified for this tool".into()).into(),
+        );
     };
 
     // Build command - replace python/python3 with venv python
@@ -160,11 +158,9 @@ pub fn run_in_venv(
     let status = cmd.status().context("Failed to execute tool")?;
 
     if !status.success() {
-        return Err(TuxBoxError::ExecutionError(format!(
-            "Tool exited with status: {}",
-            status
-        ))
-        .into());
+        return Err(
+            TuxBoxError::ExecutionError(format!("Tool exited with status: {}", status)).into(),
+        );
     }
 
     Ok(())
