@@ -150,10 +150,10 @@ fn extract_registry_name(url: &str) -> String {
 
     let cleaned = url.trim_end_matches(".git").trim_end_matches('/');
 
-    if let Some(name) = cleaned.split('/').last() {
+    if let Some(name) = cleaned.rsplit('/').next() {
         name.to_string()
-    } else if let Some(name) = cleaned.split(':').last() {
-        name.split('/').last().unwrap_or("default").to_string()
+    } else if let Some(name) = cleaned.rsplit(':').next() {
+        name.rsplit('/').next().unwrap_or("default").to_string()
     } else {
         "default".to_string()
     }
