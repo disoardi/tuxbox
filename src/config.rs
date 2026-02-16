@@ -171,6 +171,7 @@ pub fn load_config() -> Result<Config> {
     let mut config: Config = toml::from_str(&config_str)?;
 
     // Backward compatibility: migrate old registry_url to new format
+    #[allow(clippy::collapsible_if)]
     if let Some(ref legacy_url) = config.registry_url {
         if config.registries.is_empty() {
             let auth_type = if legacy_url.starts_with("git@") || legacy_url.starts_with("ssh://") {
