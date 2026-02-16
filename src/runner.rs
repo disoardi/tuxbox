@@ -37,16 +37,23 @@ pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
             docker::run_in_docker(&tool_config, &tool_path, args)?;
         }
         ExecutionEnvironment::LocalVenv => {
-            // FALLBACK: Use local Python venv
-            if tool_config.tool_type.as_deref() == Some("python") {
-                python::run_in_venv(&tool_config, &tool_path, args)?;
-            } else {
-                // Non-Python tools without Docker - direct execution
-                return Err(TuxBoxError::ExecutionError(format!(
-                    "Tool type '{}' requires Docker for execution. Please install Docker.",
-                    tool_config.tool_type.as_deref().unwrap_or("unknown")
-                ))
-                .into());
+            // FALLBACK: Use local Python venv or direct execution
+            match tool_config.tool_type.as_deref() {
+                Some("python") => {
+                    python::run_in_venv(&tool_config, &tool_path, args)?;
+                }
+                Some("bash") | Some("script") => {
+                    // Direct bash script execution (no Docker, no venv needed)
+                    run_bash_script(&tool_config, &tool_path, args)?;
+                }
+                _ => {
+                    // Other tool types require Docker
+                    return Err(TuxBoxError::ExecutionError(format!(
+                        "Tool type '{}' requires Docker for execution. Please install Docker.",
+                        tool_config.tool_type.as_deref().unwrap_or("unknown")
+                    ))
+                    .into());
+                }
             }
         }
     }
@@ -128,4 +135,51 @@ fn get_hardcoded_tool_config(tool_name: &str) -> Result<ToolConfig> {
         }),
         _ => Err(TuxBoxError::ToolNotFound(tool_name.to_string()).into()),
     }
+}
+
+/// Run a bash script directly (no Docker, no venv)
+fn run_bash_script(
+    tool_config: &ToolConfig,
+    tool_path: &std::path::Path,
+    args: &[String],
+) -> Result<()> {
+    use std::process::Command;
+
+    // Get run command from config
+    let run_cmd = tool_config
+        .commands
+        .as_ref()
+        .map(|c| c.run.as_str())
+        .unwrap_or("bash");
+
+    println!("  {} Executing: {}", "→".cyan(), run_cmd.bold());
+
+    // Build command
+    let mut cmd = Command::new("bash");
+    cmd.current_dir(tool_path);
+    cmd.arg("-c");
+
+    // Build full command with args
+    let full_cmd = if args.is_empty() {
+        run_cmd.to_string()
+    } else {
+        format!("{} {}", run_cmd, args.join(" "))
+    };
+
+    cmd.arg(&full_cmd);
+
+    // Execute
+    let status = cmd.status().map_err(|e| {
+        TuxBoxError::ExecutionError(format!("Failed to execute bash script: {}", e))
+    })?;
+
+    if !status.success() {
+        return Err(TuxBoxError::ExecutionError(format!(
+            "Script exited with code: {}",
+            status.code().unwrap_or(-1)
+        ))
+        .into());
+    }
+
+    Ok(())
 }

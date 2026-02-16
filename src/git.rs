@@ -16,7 +16,12 @@ pub fn clone_tool(tool_name: &str, repo_url: &str, branch: Option<&str>) -> Resu
 
     println!("  → Cloning {} from {}...", tool_name, repo_url);
 
-    // Clone repository
+    // For SSH URLs, use system git (handles SSH keys automatically)
+    if repo_url.starts_with("git@") || repo_url.starts_with("ssh://") {
+        return clone_with_system_git(repo_url, &tool_path, branch);
+    }
+
+    // For HTTPS URLs, use git2
     let mut builder = git2::build::RepoBuilder::new();
 
     if let Some(branch_name) = branch {
@@ -26,6 +31,38 @@ pub fn clone_tool(tool_name: &str, repo_url: &str, branch: Option<&str>) -> Resu
     builder
         .clone(repo_url, &tool_path)
         .map_err(|e| TuxBoxError::GitError(format!("Clone failed: {}", e)))?;
+
+    println!("  ✓ Cloned successfully");
+
+    Ok(())
+}
+
+/// Clone using system git command (for SSH URLs)
+fn clone_with_system_git(
+    repo_url: &str,
+    dest: &std::path::Path,
+    branch: Option<&str>,
+) -> Result<()> {
+    use std::process::Command;
+
+    let mut cmd = Command::new("git");
+    cmd.arg("clone");
+
+    if let Some(branch_name) = branch {
+        cmd.args(["--branch", branch_name]);
+    }
+
+    cmd.arg(repo_url);
+    cmd.arg(dest);
+
+    let output = cmd
+        .output()
+        .map_err(|e| TuxBoxError::GitError(format!("Failed to execute git command: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(TuxBoxError::GitError(format!("Git clone failed: {}", stderr.trim())).into());
+    }
 
     println!("  ✓ Cloned successfully");
 
