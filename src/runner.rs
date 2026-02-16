@@ -63,6 +63,7 @@ fn get_tool_config(tool_name: &str) -> Result<ToolConfig> {
     use crate::{config, registry};
 
     // Try loading from registry first (Phase 2)
+    #[allow(clippy::collapsible_if)]
     if let Ok(cfg) = config::load_config() {
         if !cfg.registries.is_empty() {
             let registry_base_dir = config::registry_dir()?;

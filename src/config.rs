@@ -220,6 +220,7 @@ pub fn list_tools() -> Result<()> {
 
             for registry_config in &config.registries {
                 let registry_dir_path = registry_base_dir.join(&registry_config.name);
+                #[allow(clippy::collapsible_if)]
                 if registry_dir_path.exists() {
                     if let Ok(registry_data) = registry::load_registry_tools(&registry_dir_path) {
                         for (tool_name, tool_info) in registry_data.tools {
