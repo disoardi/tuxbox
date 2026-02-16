@@ -1,0 +1,17 @@
+#!/bin/bash
+# TuxBox pre-commit hook
+# Automatically formats Rust code before commit
+
+set -e
+
+echo "🎨 Running cargo fmt..."
+
+# Format all Rust code
+cargo fmt --all
+
+# Add formatted files back to staging
+git diff --name-only --cached | grep '\.rs$' | xargs git add 2>/dev/null || true
+
+echo "✅ Code formatted successfully"
+
+exit 0
