@@ -1302,6 +1302,284 @@ git pushall-tags
 
 ---
 
+## 🔐 SSH Repository Support
+
+### SSH Clone Strategy
+
+**Automatic detection**: Repository URLs starting with `git@` or `ssh://` automatically use system git instead of git2.
+
+**Why system git for SSH:**
+- Handles SSH keys automatically without callback setup
+- Uses configured SSH keys from `~/.ssh/` directory
+- Simpler and more robust than git2 SSH callbacks
+- Supports SSH agent and key passphrases
+
+**Implementation details:**
+- HTTPS URLs continue using git2 crate (faster, native)
+- SSH URLs use `git clone` command via system git
+- No configuration needed if SSH keys are properly set up
+
+### Testing SSH Tools
+
+When adding private SSH repositories to registry:
+
+1. **Verify SSH key is configured** for the GitHub instance:
+   ```bash
+   ssh -T git@github.com
+   # or for enterprise
+   ssh -T git@github.company.com
+   ```
+
+2. **Test manual clone first**:
+   ```bash
+   git clone git@github.com:user/private-repo.git /tmp/test
+   ```
+
+3. **Add to registry** with full SSH URL:
+   ```toml
+   [tools.my_private_tool]
+   repo = "git@github.com:user/private-repo"
+   private = true
+   ```
+
+4. **Test with tbox**:
+   ```bash
+   rm -rf ~/.tuxbox/tools/my_private_tool
+   tbox run my_private_tool
+   ```
+
+### Common SSH Issues
+
+**Problem:** "Permission denied (publickey)"
+- **Solution:** Add SSH key to GitHub account and ssh-agent
+- **Check:** `ssh-add -l` to list loaded keys
+
+**Problem:** "Host key verification failed"
+- **Solution:** Add host to known_hosts: `ssh-keyscan github.com >> ~/.ssh/known_hosts`
+
+---
+
+## 🐚 Bash Script Execution
+
+### Tool Type: bash
+
+For shell scripts, Ansible playbooks, or any bash-executable tool that doesn't require Python/Docker isolation.
+
+**Execution strategy:**
+- Direct execution via `bash -c` in tool directory
+- No Docker container or Python venv required
+- Runs in host environment with full access
+- Inherits user's environment variables
+
+**When to use type "bash":**
+- ✅ Shell scripts with menu/CLI interfaces
+- ✅ Ansible playbooks with wrapper scripts
+- ✅ Tools managing their own dependencies (Poetry, npm, etc.)
+- ✅ System utilities requiring host access
+- ❌ Python tools → use `type = "python"` instead
+- ❌ Complex environments needing isolation → consider Docker
+
+### Registry Configuration
+
+**Example bash tool entry:**
+```toml
+[tools.my_bash_tool]
+name = "my_bash_tool"
+repo = "https://github.com/user/bash-tool"
+type = "bash"
+description = "Shell script utility with interactive menu"
+
+[tools.my_bash_tool.commands]
+run = "./scripts/run.sh"
+
+[tools.my_bash_tool.dependencies]
+# Dependencies managed by tool itself
+poetry = true  # or npm, conda, etc.
+```
+
+**Entry point options:**
+- Relative path from repo root: `./scripts/menu.sh`
+- Simple command: `bash main.sh`
+- With args: `bash run.sh --config config.toml`
+
+### Environment and Permissions
+
+**What bash tools have access to:**
+- Full filesystem access (same as user)
+- All environment variables
+- Network access
+- System commands (docker, kubectl, etc.)
+
+**Security considerations:**
+- Bash tools run with your user permissions
+- Private repos should be from trusted sources
+- Review script code before first run
+- Consider Docker isolation for untrusted tools
+
+---
+
+## 📋 Registry Expansion Workflow
+
+### Adding New Tools - Step by Step
+
+#### 1. Analyze Tool Structure
+
+Clone and explore the tool locally:
+```bash
+cd /tmp
+git clone <repo-url>
+cd <tool-name>
+ls -la
+```
+
+**Identify:**
+- Entry point: script file, Python module, binary
+- Dependencies: requirements.txt, pyproject.toml, package.json, Makefile
+- Documentation: README, USAGE, etc.
+
+#### 2. Determine Tool Type
+
+**Type decision matrix:**
+
+| Tool Characteristics | Type | Execution |
+|---------------------|------|-----------|
+| Python package/module | `python` | Docker → venv fallback |
+| Shell script, Ansible | `bash` | Direct bash execution |
+| Binary/compiled | `bash` | Direct execution |
+| Complex (multi-lang) | Consider Docker | Custom Dockerfile |
+
+**Check for:**
+- Python: `*.py`, `requirements.txt`, `pyproject.toml`, `setup.py`
+- Bash: `*.sh`, `Makefile`, shell scripts
+- Poetry: `pyproject.toml` with `[tool.poetry]`
+
+#### 3. Add to Registry
+
+**Template:**
+```toml
+[tools.tool_name]
+name = "tool_name"
+repo = "https://github.com/user/tool"  # or git@... for private
+branch = "main"
+version = "0.1.0"
+type = "python" | "bash"
+description = "Brief description"
+private = false  # true for SSH repos
+
+[tools.tool_name.commands]
+run = "command-name" | "./script.sh" | "python -m module"
+
+[tools.tool_name.dependencies]
+python = ">=3.8"  # for Python tools
+poetry = true     # if uses Poetry
+requirements = "requirements.txt"  # if has requirements
+```
+
+#### 4. Test Workflow
+
+**Complete test sequence:**
+```bash
+# 1. Verify tool appears in registry
+tbox list | grep tool_name
+
+# 2. Clean slate (force fresh clone)
+rm -rf ~/.tuxbox/tools/tool_name
+docker rmi tool_name_* 2>/dev/null
+
+# 3. Test clone + run
+tbox run tool_name --help
+
+# 4. Test idempotence (should skip clone)
+tbox run tool_name --help
+
+# 5. Test update
+tbox update tool_name
+```
+
+**Expected outcomes:**
+- ✅ First run: clones repo, sets up environment, runs command
+- ✅ Second run: skips clone, runs directly
+- ✅ Update: pulls latest changes, preserves local setup
+
+#### 5. Commit and Push
+
+**Registry repository workflow:**
+```bash
+cd ~/.tuxbox/registry/tuxbox-registry-private
+
+# Review changes
+git diff tools.toml
+
+# Commit with descriptive message
+git add tools.toml
+git commit -m "feat: add <tool-name> to registry
+
+- Type: <python|bash>
+- Repository: <url>
+- Description: <what it does>
+
+Tools now: <count>"
+
+# Push to registry
+git push
+```
+
+### Common Patterns
+
+**Python tool with Poetry:**
+```toml
+type = "python"
+[commands]
+run = "tool-command"
+[dependencies]
+python = ">=3.8"
+poetry = true
+```
+
+**Bash script (Ansible, shell):**
+```toml
+type = "bash"
+[commands]
+run = "./scripts/menu.sh"
+[dependencies]
+poetry = true  # if tool uses Poetry for deps
+```
+
+**Private SSH repository:**
+```toml
+repo = "git@github.com:user/private-tool"
+private = true
+```
+
+**Public HTTPS repository:**
+```toml
+repo = "https://github.com/user/public-tool"
+private = false
+```
+
+### Troubleshooting
+
+**Tool doesn't appear in `tbox list`:**
+- Check tools.toml syntax with `toml` validator
+- Verify registry was synced: `tbox list` should show update message
+- Try: `rm -rf ~/.tuxbox/registry && tbox list` to force re-clone
+
+**Clone fails:**
+- HTTPS: Check repository is public or credentials are set
+- SSH: Verify SSH key is configured (`ssh -T git@github.com`)
+- Check network/firewall
+
+**Execution fails:**
+- Docker build error: Check Dockerfile in tool repo
+- Python import error: Verify dependencies are installed
+- Bash script error: Check script has execute permission and shebang
+
+**Update doesn't pull changes:**
+- Check for uncommitted changes: `cd ~/.tuxbox/tools/<tool> && git status`
+- Force re-clone: `rm -rf ~/.tuxbox/tools/<tool> && tbox run <tool>`
+
+---
+
 ## 📖 Riferimenti e Risorse
 
 ### Documentazione Progetto
