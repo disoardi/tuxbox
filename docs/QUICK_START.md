@@ -4,6 +4,94 @@ Guida rapida per iniziare a usare TuxBox con un registry SSH privato.
 
 ---
 
+## 📦 Installazione
+
+### Metodo 1: Download Binary Pre-compilato (RACCOMANDATO)
+
+#### Linux (x86_64)
+
+```bash
+# Download latest release
+curl -L https://github.com/disoardi/tuxbox/releases/latest/download/tbox-linux-amd64.tar.gz -o /tmp/tbox.tar.gz
+
+# Extract
+cd /tmp && tar xzf tbox.tar.gz
+
+# Install to system directory (richiede sudo)
+sudo mv tbox /usr/local/bin/
+
+# Verify installation
+tbox --version
+```
+
+#### macOS (Apple Silicon & Intel)
+
+```bash
+# Download latest release (ARM64 binary runs on Intel via Rosetta 2)
+curl -L https://github.com/disoardi/tuxbox/releases/latest/download/tbox-macos-arm64.tar.gz -o /tmp/tbox.tar.gz
+
+# Extract
+cd /tmp && tar xzf tbox.tar.gz
+
+# Install to system directory (richiede sudo)
+sudo mv tbox /usr/local/bin/
+
+# Verify installation
+tbox --version
+```
+
+### Metodo 2: Install senza sudo (user directory)
+
+Se non hai permessi sudo o preferisci installare solo per il tuo utente:
+
+```bash
+# Create user bin directory
+mkdir -p ~/.local/bin
+
+# Move binary (after extraction)
+mv /tmp/tbox ~/.local/bin/
+
+# Add to PATH (aggiungi a ~/.bashrc o ~/.zshrc)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc  # or ~/.bashrc
+source ~/.zshrc  # Reload shell config
+
+# Verify installation
+tbox --version
+```
+
+### Metodo 3: Compile from Source
+
+Se hai Rust installato (1.80+) e vuoi compilare tu stesso:
+
+```bash
+# Clone repository
+git clone https://github.com/disoardi/tuxbox.git
+cd tuxbox
+
+# Build and install
+cargo install --path .
+
+# Binary installed in ~/.cargo/bin/tbox
+# Make sure ~/.cargo/bin is in your PATH
+
+# Verify installation
+tbox --version
+```
+
+### Verifica Installazione
+
+```bash
+# Check version
+tbox --version
+# Expected output: tbox 0.2.0
+
+# Check help
+tbox --help
+# Should show all available commands
+```
+
+---
+
 ## 📋 Prerequisiti
 
 ### 1. SSH Passwordless Setup (OBBLIGATORIO per registry privati)
@@ -287,6 +375,10 @@ tbox registry sync                    # Sincronizza tutti i registry
 tbox list                             # Lista tools disponibili
 tbox run <tool> [args...]             # Esegui tool
 tbox update [tool]                    # Aggiorna tool installato
+
+# Self-update TuxBox
+tbox self-update                      # Check e mostra update disponibile
+tbox self-update --install            # Scarica e installa update
 ```
 
 ---

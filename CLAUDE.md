@@ -10,54 +10,68 @@
 
 ---
 
-## 📊 Stato Corrente (Aggiornato: 2026-02-12)
+## 📊 Stato Corrente (Aggiornato: 2026-02-16)
 
 ### Repository Setup
-- Git repository: ✅ Inizializzato
-- Latest commit: **9a13d77** - Container naming + UID/GID + HOME mount
+- Git repository: ✅ Inizializzato e pubblico
+- Latest commit: **572a34d** - docs: add GitHub Pages documentation site
 - Branch: main
-- Remote: da configurare (https://github.com/disoardi/tuxbox)
-- Commits oggi: 3 (d72ea7c → 040d557 → 9a13d77)
+- Remote (pubblico): https://github.com/disoardi/tuxbox
+- Remote (enterprise): https://github.dxc.com/disoardi/tuxbox
+- **Current version:** v0.2.0 (released 2026-02-13)
 
 ### Codice Implementato
-- ✅ Struttura modulare completa (10 moduli Rust)
+- ✅ Struttura modulare completa (11 moduli Rust)
   - main, cli, config, error, git, runner
-  - **environment, docker, python** (NUOVI - implementati oggi)
-- ✅ Dependencies moderne (Clap 4.5, git2, thiserror, colored)
-- ✅ Documentazione esaustiva in `.claude/`
+  - environment, docker, python, registry
+  - **selfupdate** (NUOVO - implementato 2026-02-13)
+- ✅ Dependencies moderne (Clap 4.5, git2, thiserror, colored, reqwest, tar, flate2)
+- ✅ Documentazione esaustiva in `.claude/` + GitHub Pages
 - ✅ **Compilato e testato con successo!**
 - ✅ **Workflow Docker funzionante end-to-end**
-- ✅ **Tool sshmenuc testato e funzionante**
+- ✅ **CI/CD automation completa**
 
 ### Features Implementate
 - ✅ **Dual-mode execution** (Docker-first + venv fallback)
 - ✅ **Auto-setup completo** (zero-config per utente)
 - ✅ **Docker container management** (auto-build, auto-install deps)
 - ✅ **Python venv fallback** (auto-create, auto-install requirements)
+- ✅ **Multi-registry support** (public + private registries)
+- ✅ **Self-update mechanism** (GitHub API integration)
 - ✅ **Smart TTY handling** (conditional -it)
 - ✅ **Container naming** (<tool>_<version>)
 - ✅ **UID/GID mapping** (stesso utente host)
 - ✅ **HOME directory preservation**
 
+### Infrastructure
+- ✅ **GitHub Actions CI/CD**
+  - Automated testing on push/PR
+  - Multi-platform builds (Linux x86_64, macOS ARM64)
+  - Automated releases on version tags
+- ✅ **GitHub Pages** - https://disoardi.github.io/tuxbox
+- ✅ **Published releases** - https://github.com/disoardi/tuxbox/releases
+
 ---
 
-## 🎯 Progress Update (2026-02-12)
+## 🎯 Progress Update (2026-02-16)
 
-### ✅ **COMPLETATO OGGI:**
+### ✅ **COMPLETATO:**
 - **Phase 0 (MVP):** ✅ 100% - Compilazione, clone, run base
-- **Phase 1 (Venv):** ✅ 100% - Auto-setup Python con venv
-- **BONUS - Docker Support:** ✅ 100% - Container execution (era previsto Phase 3!)
+- **Phase 1 (Venv):** ✅ 100% - Auto-setup Python con venv + Docker support
+- **Phase 2a (Multi-Registry):** ✅ 100% - Registry system con support multi-registry
+- **Infrastructure:** ✅ 100% - CI/CD, GitHub Pages, self-update
 
 ### 🔄 **IN PROGRESS:**
-- Phase 2 (Registry): Task 14-18 da iniziare
-- Testing: venv fallback, comandi list/status/update
+- Testing: self-update end-to-end con release live
+- Expanding: aggiungere più tool ai registry
 
 ### 📋 **NEXT STEPS:**
-1. Test fallback venv (no Docker environment)
-2. Implementare Phase 2 (Registry TOML system)
-3. Setup GitHub repository pubblico
-4. CI/CD con GitHub Actions
-5. First release v0.1.0
+1. ✅ Setup GitHub repository pubblico (DONE)
+2. ✅ CI/CD con GitHub Actions (DONE)
+3. ✅ First release v0.2.0 (DONE)
+4. 🔜 Test self-update mechanism
+5. 🔜 Espandere registry con tool personali
+6. 🔜 Setup pre-commit hooks per formatting
 
 ---
 
@@ -66,12 +80,12 @@
 ```
 Phase 0 (MVP) ────> Phase 1 (Venv) ────> Phase 2 (Registry) ────> Phase 3 (Future)
      ↓                   ↓                      ↓                        ↓
-  Clone + Run      Auto-setup Python      TOML/YAML Registry    Docker + Multi-lang
-  ✅ DONE          ✅ DONE + DOCKER       🔜 NEXT                📅 FUTURE
+  Clone + Run      Auto-setup Python      Multi-Registry System    Advanced Features
+  ✅ DONE          ✅ DONE + DOCKER       ✅ DONE (Phase 2a)       📅 FUTURE
 ```
 
-**Target corrente:** Implementazione completa fino a Phase 2
-**Progress:** Phase 0 ✅ | Phase 1 ✅ | **Docker Bonus ✅** | Phase 2 🔜
+**Target corrente:** Testing e espansione registry
+**Progress:** Phase 0 ✅ | Phase 1 ✅ | Phase 2a ✅ | **Infrastructure ✅**
 
 ---
 
@@ -1123,6 +1137,168 @@ git push origin feature/task-10-python-detection
 - **Integration tests:** In `tests/` directory per workflow end-to-end
 - **Manual testing:** Checklist dopo ogni phase
 - **CI:** Run automatico di tutti i test su push
+
+---
+
+## 🚀 GitHub Actions & CI/CD
+
+### GitHub Actions Best Practices
+
+#### Permission Requirements
+- **Always specify** `permissions:` esplicitamente nei workflows
+- Per releases: `permissions: contents: write`
+- Per PRs: `permissions: pull-requests: write`
+- Test workflows locally con `act` tool quando possibile
+
+**Example:**
+```yaml
+jobs:
+  release:
+    permissions:
+      contents: write  # Required for creating releases
+    runs-on: ubuntu-latest
+```
+
+#### Multi-Platform Builds
+- **Preferire native runners** a cross-compilation
+  - ✅ Use `macos-14` per ARM64 (M1/M2/M3)
+  - ✅ Use `ubuntu-latest` per Linux x86_64
+  - ⚠️ macOS Intel builds: verificare runner availability
+- **Cross-compilation issues:**
+  - OpenSSL linking failures su macOS cross-compile
+  - Richiede setup complesso (target installation, env vars)
+- **Fallback strategy:**
+  - Documentare uso Rosetta 2 per Intel Macs
+  - Fornire alternative se runner non disponibili
+
+#### Workflow Patterns
+- **Use `gh CLI`** invece di deprecated GitHub Actions
+  - ✅ `gh release create` invece di `actions/create-release@v1`
+  - ✅ `gh release upload` per asset management
+- **Implement retry logic** per upload assets (concurrent builds)
+- **Create release** solo da primo job, altri upload assets
+- **Asset naming convention:** `<tool>-<version>-<platform>-<arch>.tar.gz`
+
+**Example:**
+```bash
+# Good: Using gh CLI
+gh release create ${{ github.ref_name }} --generate-notes
+gh release upload ${{ github.ref_name }} tbox-linux-x86_64.tar.gz
+
+# Bad: Using deprecated action (will fail)
+- uses: actions/create-release@v1  # DEPRECATED!
+```
+
+#### Common Pitfalls
+- ❌ Non specificare permissions → "Resource not accessible by integration"
+- ❌ Cross-compile macOS → OpenSSL linking errors
+- ❌ Assumere runner availability → infinite queue times
+- ❌ Usare actions deprecate → workflow failures
+- ❌ Dimenticare `cargo fmt` → CI formatting failures
+
+---
+
+### Release Workflow Checklist
+
+#### Pre-Release
+- [ ] Run `cargo fmt` per evitare CI failures
+- [ ] Run `cargo clippy -- -D warnings` per catch warnings
+- [ ] Run `cargo test` per verificare tutti i test passano
+- [ ] Test build locale: `cargo build --release`
+- [ ] Verificare GitHub runner availability per piattaforme target
+- [ ] Update CHANGELOG.md con nuove features (opzionale)
+
+#### Release Process
+1. **Bump version** in `Cargo.toml`
+   ```bash
+   # Edit Cargo.toml: version = "0.3.0"
+   cargo build  # Update Cargo.lock
+   ```
+
+2. **Commit version bump**
+   ```bash
+   git add Cargo.toml Cargo.lock
+   git commit -m "chore: bump version to 0.3.0"
+   ```
+
+3. **Create annotated tag**
+   ```bash
+   git tag -a v0.3.0 -m "Release v0.3.0
+
+   - Feature 1
+   - Feature 2
+   - Bug fix 3"
+   ```
+
+4. **Push tag** (trigger release workflow)
+   ```bash
+   git push origin main
+   git push origin v0.3.0
+   ```
+
+5. **Monitor GitHub Actions**
+   ```bash
+   # Watch workflow progress
+   gh run watch
+
+   # Or check online
+   open https://github.com/disoardi/tuxbox/actions
+   ```
+
+#### Post-Release
+- [ ] Verificare release creata: https://github.com/disoardi/tuxbox/releases
+- [ ] Download e test binari da release per ogni piattaforma
+- [ ] Test self-update da versione precedente: `tbox self-update`
+- [ ] Update documentazione se necessario
+- [ ] Sync con enterprise remote: `git push origin-dxc main --tags`
+
+---
+
+### Dual Repository Strategy
+
+Quando serve backup enterprise + repository pubblico per self-update e community.
+
+#### Setup Remotes
+```bash
+# Add public remote (primary)
+git remote add origin git@github.com:disoardi/tuxbox.git
+
+# Add enterprise backup remote
+git remote add origin-dxc git@github.dxc.com:disoardi/tuxbox.git
+
+# Verify remotes
+git remote -v
+```
+
+#### Sync Workflow
+```bash
+# Push to both remotes
+git push origin main
+git push origin-dxc main
+
+# Push tags to both
+git push origin --tags
+git push origin-dxc --tags
+
+# Create alias for convenience
+git config alias.pushall '!git push origin main && git push origin-dxc main'
+git config alias.pushall-tags '!git push origin --tags && git push origin-dxc --tags'
+
+# Use alias
+git pushall
+git pushall-tags
+```
+
+#### Benefits
+- ✅ **Automatic backup** su enterprise GitHub
+- ✅ **Public visibility** per self-update e community contributions
+- ✅ **Simple sync** con comandi standard git
+- ✅ **Fallback** se un remote è down
+
+#### Considerations
+- Enterprise remote è **backup only** (no CI/CD, no releases)
+- Releases e self-update usano solo public remote
+- Keep both in sync per consistency
 
 ---
 

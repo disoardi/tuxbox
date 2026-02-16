@@ -24,14 +24,50 @@ tbox run sshmenuc
 
 ### Installation
 
-```bash
-# From source (requires Rust 1.80+)
-cargo install --path .
+#### Option 1: Download Pre-built Binary (Recommended)
 
-# Or download binary from releases
-curl -L https://github.com/disoardi/tuxbox/releases/latest/download/tbox-linux -o tbox
-chmod +x tbox
+**Linux (x86_64)**
+```bash
+curl -L https://github.com/disoardi/tuxbox/releases/latest/download/tbox-linux-amd64.tar.gz -o /tmp/tbox.tar.gz
+cd /tmp && tar xzf tbox.tar.gz
+
+# Install to system (requires sudo)
 sudo mv tbox /usr/local/bin/
+
+# Or install to user directory (no sudo)
+mkdir -p ~/.local/bin
+mv tbox ~/.local/bin/
+export PATH="$HOME/.local/bin:$PATH"  # Add to ~/.bashrc or ~/.zshrc
+```
+
+**macOS (Apple Silicon & Intel)**
+```bash
+curl -L https://github.com/disoardi/tuxbox/releases/latest/download/tbox-macos-arm64.tar.gz -o /tmp/tbox.tar.gz
+cd /tmp && tar xzf tbox.tar.gz
+
+# Install to system (requires sudo)
+sudo mv tbox /usr/local/bin/
+
+# Or install to user directory (no sudo)
+mkdir -p ~/.local/bin
+mv tbox ~/.local/bin/
+# Add to ~/.zshrc: export PATH="$HOME/.local/bin:$PATH"
+```
+
+**Note**: The ARM64 binary runs on Intel Macs via Rosetta 2.
+
+#### Option 2: Compile from Source
+
+```bash
+# Requires Rust 1.80+
+cargo install --path .
+```
+
+#### Verify Installation
+
+```bash
+tbox --version
+# Output: tbox 0.2.0
 ```
 
 ### First Run
@@ -45,6 +81,18 @@ tbox list
 
 # Run a tool (clones automatically if needed)
 tbox run <tool-name>
+```
+
+### Updating TuxBox
+
+TuxBox can update itself to the latest version:
+
+```bash
+# Check for updates
+tbox self-update
+
+# Install update automatically (no prompt)
+tbox self-update --install
 ```
 
 ## 📖 Features
@@ -64,7 +112,11 @@ TuxBox consists of:
 
 ## 📚 Documentation
 
-Full documentation available at: [https://disoardi.github.io/tuxbox](https://disoardi.github.io/tuxbox)
+- **[Installation Guide](docs/INSTALLATION.md)** - Complete installation instructions
+- **[Quick Start Guide](docs/QUICK_START.md)** - Setup and first steps
+- **[Registry Format](docs/REGISTRY_FORMAT.md)** - Creating tool registries
+
+Full documentation: [https://disoardi.github.io/tuxbox](https://disoardi.github.io/tuxbox)
 
 ## 🛠️ Development
 

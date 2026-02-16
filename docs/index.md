@@ -8,14 +8,45 @@
 
 ## 🚀 Quick Start
 
-```bash
-# Install TuxBox
-wget https://github.com/disoardi/tuxbox/releases/latest/download/tbox-linux-amd64.tar.gz
-tar xzf tbox-linux-amd64.tar.gz
-sudo mv tbox /usr/local/bin/
+### Installation
 
+**Linux (x86_64)**
+```bash
+curl -L https://github.com/disoardi/tuxbox/releases/latest/download/tbox-linux-amd64.tar.gz -o /tmp/tbox.tar.gz
+cd /tmp && tar xzf tbox.tar.gz
+sudo mv tbox /usr/local/bin/
+```
+
+**macOS (Apple Silicon & Intel)**
+```bash
+curl -L https://github.com/disoardi/tuxbox/releases/latest/download/tbox-macos-arm64.tar.gz -o /tmp/tbox.tar.gz
+cd /tmp && tar xzf tbox.tar.gz
+sudo mv tbox /usr/local/bin/
+```
+
+**Alternative: Install without sudo**
+```bash
+# After extraction, install to user directory
+mkdir -p ~/.local/bin
+mv tbox ~/.local/bin/
+
+# Add to PATH (add this line to ~/.bashrc or ~/.zshrc)
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+**Verify Installation**
+```bash
+tbox --version  # Should show: tbox 0.2.0
+```
+
+### First Run
+
+```bash
 # Initialize with a registry
 tbox init git@github.com:your-user/your-registry.git
+
+# List available tools
+tbox list
 
 # Run a tool
 tbox run <tool-name>
@@ -33,8 +64,8 @@ tbox run <tool-name>
 ## 📚 Documentation
 
 ### Getting Started
+- [Installation Guide](INSTALLATION.md) - Complete installation instructions for all platforms
 - [Quick Start Guide](QUICK_START.md) - Complete setup and first steps
-- [Installation](QUICK_START.md#-uso-di-tuxbox-prima-volta) - Platform-specific installation instructions
 
 ### Core Concepts
 - [Registry Format Reference](REGISTRY_FORMAT.md) - How to create and manage tool registries

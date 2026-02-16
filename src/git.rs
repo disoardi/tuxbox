@@ -45,8 +45,10 @@ pub fn tool_path(tool_name: &str) -> Result<std::path::PathBuf> {
     Ok(tools_dir()?.join(tool_name))
 }
 
-/// Update a tool (git pull)
+/// Update a tool (git pull with safety checks)
 pub fn update_tool(tool_name: &str) -> Result<()> {
+    use colored::Colorize;
+
     let tool_path = tool_path(tool_name)?;
 
     if !tool_path.exists() {
@@ -56,16 +58,111 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
     let repo = git2::Repository::open(&tool_path)
         .map_err(|e| TuxBoxError::GitError(format!("Failed to open repository: {}", e)))?;
 
-    // Fetch origin
+    // Check if working directory is clean
+    let statuses = repo.statuses(None).map_err(|e| {
+        TuxBoxError::GitError(format!("Failed to check repository status: {}", e))
+    })?;
+
+    if !statuses.is_empty() {
+        eprintln!("{}", "  ⚠ Warning: Tool has uncommitted changes".yellow());
+        eprintln!("  {} Update skipped to prevent data loss", "→".cyan());
+        eprintln!(
+            "  {} To force update, remove and reinstall:",
+            "→".cyan()
+        );
+        eprintln!("    {}", format!("rm -rf {}", tool_path.display()).bright_black());
+        eprintln!("    {}", format!("tbox run {}", tool_name).bright_black());
+        return Ok(());
+    }
+
+    // Get current HEAD
+    let head = repo.head().map_err(|e| {
+        TuxBoxError::GitError(format!("Failed to get HEAD reference: {}", e))
+    })?;
+    let current_commit = head.peel_to_commit().map_err(|e| {
+        TuxBoxError::GitError(format!("Failed to get current commit: {}", e))
+    })?;
+    let current_oid = current_commit.id();
+
+    // Fetch from remote
     let mut remote = repo
         .find_remote("origin")
         .map_err(|e| TuxBoxError::GitError(format!("Remote 'origin' not found: {}", e)))?;
 
     remote
-        .fetch(&["HEAD"], None, None)
+        .fetch(&["refs/heads/*:refs/remotes/origin/*"], None, None)
         .map_err(|e| TuxBoxError::GitError(format!("Fetch failed: {}", e)))?;
 
-    println!("  ✓ Updated {}", tool_name);
+    // Get remote HEAD (assuming main/master branch)
+    let branch_name = head
+        .shorthand()
+        .ok_or_else(|| TuxBoxError::GitError("Failed to get branch name".to_string()))?;
+    let remote_branch_name = format!("origin/{}", branch_name);
+    let remote_ref = repo
+        .find_reference(&format!("refs/remotes/{}", remote_branch_name))
+        .map_err(|e| {
+            TuxBoxError::GitError(format!("Remote branch '{}' not found: {}", remote_branch_name, e))
+        })?;
+    let remote_commit = remote_ref.peel_to_commit().map_err(|e| {
+        TuxBoxError::GitError(format!("Failed to get remote commit: {}", e))
+    })?;
+    let remote_oid = remote_commit.id();
+
+    // Check if already up to date
+    if current_oid == remote_oid {
+        println!("  {} Already up to date", "✓".green());
+        return Ok(());
+    }
+
+    // Count commits difference
+    let (_ahead, behind) = repo
+        .graph_ahead_behind(current_oid, remote_oid)
+        .map_err(|e| TuxBoxError::GitError(format!("Failed to compare commits: {}", e)))?;
+
+    if behind == 0 {
+        println!("  {} Local is ahead of remote (no update needed)", "✓".green());
+        return Ok(());
+    }
+
+    // Attempt fast-forward merge
+    let fetch_commit = remote_commit;
+    let refname = format!("refs/heads/{}", branch_name);
+    let mut reference = repo.find_reference(&refname).map_err(|e| {
+        TuxBoxError::GitError(format!("Failed to find reference '{}': {}", refname, e))
+    })?;
+
+    // Try fast-forward
+    let ff_result = reference.set_target(fetch_commit.id(), "Fast-forward merge");
+
+    match ff_result {
+        Ok(_) => {
+            // Update working directory
+            repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))
+                .map_err(|e| {
+                    TuxBoxError::GitError(format!("Failed to checkout HEAD: {}", e))
+                })?;
+
+            println!(
+                "  {} Updated {} ({} {} behind)",
+                "✓".green(),
+                tool_name,
+                behind,
+                if behind == 1 { "commit" } else { "commits" }
+            );
+        }
+        Err(e) => {
+            eprintln!("{}", "  ✗ Update failed: merge conflict or non-fast-forward".red());
+            eprintln!("  {} Error: {}", "→".cyan(), e);
+            eprintln!("  {} To force clean reinstall:", "→".cyan());
+            eprintln!("    {}", format!("rm -rf {}", tool_path.display()).bright_black());
+            eprintln!("    {}", format!("tbox run {}", tool_name).bright_black());
+            return Err(TuxBoxError::GitError(format!(
+                "Update failed for '{}': {}",
+                tool_name, e
+            ))
+            .into());
+        }
+    }
 
     Ok(())
 }
