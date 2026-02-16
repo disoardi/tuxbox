@@ -121,6 +121,9 @@ Full documentation: [https://disoardi.github.io/tuxbox](https://disoardi.github.
 ## 🛠️ Development
 
 ```bash
+# Setup pre-commit hook (recommended)
+cp .githooks/pre-commit .git/hooks/ && chmod +x .git/hooks/pre-commit
+
 # Build
 cargo build
 
@@ -133,6 +136,8 @@ RUST_LOG=debug cargo run -- run <tool-name>
 # Build release
 cargo build --release
 ```
+
+**Pre-commit Hook**: Automatically formats code with `cargo fmt` before each commit, preventing CI formatting failures. See [.githooks/README.md](.githooks/README.md) for details.
 
 ## 📝 License
 
