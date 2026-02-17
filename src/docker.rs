@@ -17,13 +17,22 @@ pub fn run_in_docker(tool_config: &ToolConfig, tool_path: &Path, args: &[String]
     // Build container image name
     let image_name = format!("tuxbox-{}", tool_config.name);
 
+    // Check if tool has a custom Dockerfile
+    let has_custom_dockerfile = tool_path.join("Dockerfile").exists();
+
     // Check if we need to build the image
     if !image_exists(&image_name)? {
         build_image(&image_name, tool_path, python_version)?;
     }
 
     // Run the tool in the container
-    run_container(&image_name, tool_config, tool_path, args)?;
+    run_container(
+        &image_name,
+        tool_config,
+        tool_path,
+        args,
+        has_custom_dockerfile,
+    )?;
 
     Ok(())
 }
@@ -130,6 +139,7 @@ fn run_container(
     tool_config: &ToolConfig,
     _tool_path: &Path,
     args: &[String],
+    has_custom_dockerfile: bool,
 ) -> Result<()> {
     println!("  {} Running in container...", "→".cyan());
 
@@ -162,24 +172,31 @@ fn run_container(
     // Get user's home directory and UID/GID
     let home = std::env::var("HOME").unwrap_or_default();
 
-    // Get current user's UID and GID
-    #[cfg(unix)]
-    let user_id = {
-        use std::os::unix::fs::MetadataExt;
-        let metadata = std::fs::metadata(&home).ok();
-        metadata.map(|m| format!("{}:{}", m.uid(), m.gid()))
-    };
+    // Only run as non-root user for auto-generated Dockerfiles
+    // For custom Dockerfiles, trust the tool's setup (may use /root/.local for packages)
+    if !has_custom_dockerfile {
+        // Get current user's UID and GID
+        #[cfg(unix)]
+        let user_id = {
+            use std::os::unix::fs::MetadataExt;
+            let metadata = std::fs::metadata(&home).ok();
+            metadata.map(|m| format!("{}:{}", m.uid(), m.gid()))
+        };
 
-    // Run container as current user (preserves permissions and home structure)
-    #[cfg(unix)]
-    if let Some(uid_gid) = user_id {
-        cmd.arg("--user");
-        cmd.arg(&uid_gid);
+        // Run container as current user (preserves permissions and home structure)
+        #[cfg(unix)]
+        if let Some(uid_gid) = user_id {
+            cmd.arg("--user");
+            cmd.arg(&uid_gid);
+        }
     }
 
-    // Set HOME environment variable in container
-    cmd.arg("-e");
-    cmd.arg(format!("HOME={}", home));
+    // Set HOME environment variable for auto-generated Dockerfiles only
+    // Custom Dockerfiles may rely on /root for package locations
+    if !has_custom_dockerfile {
+        cmd.arg("-e");
+        cmd.arg(format!("HOME={}", home));
+    }
 
     // Mount volumes for tool access to configs and data
     cmd.args([
@@ -196,8 +213,13 @@ fn run_container(
     // Add the image
     cmd.arg(image_name);
 
-    // Add the command to run
-    cmd.args(container_cmd.split_whitespace());
+    // For custom Dockerfiles, use the ENTRYPOINT defined in Dockerfile
+    // For auto-generated Dockerfiles, provide the full command
+    if !has_custom_dockerfile {
+        // Add the command to run (auto-generated images need full command)
+        cmd.args(container_cmd.split_whitespace());
+    }
+    // else: custom Dockerfile has ENTRYPOINT, just pass args
 
     // Add user arguments
     cmd.args(args);
