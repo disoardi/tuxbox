@@ -10,15 +10,15 @@
 
 ---
 
-## 📊 Stato Corrente (Aggiornato: 2026-02-16)
+## 📊 Stato Corrente (Aggiornato: 2026-02-17)
 
 ### Repository Setup
 - Git repository: ✅ Inizializzato e pubblico
-- Latest commit: **572a34d** - docs: add GitHub Pages documentation site
+- Latest commit: **ce9b2dc** - fix: handle custom Dockerfiles correctly in container execution
 - Branch: main
 - Remote (pubblico): https://github.com/disoardi/tuxbox
 - Remote (enterprise): https://github.dxc.com/disoardi/tuxbox
-- **Current version:** v0.2.0 (released 2026-02-13)
+- **Current version:** v0.2.1 (dev)
 
 ### Codice Implementato
 - ✅ Struttura modulare completa (11 moduli Rust)
@@ -40,8 +40,11 @@
 - ✅ **Self-update mechanism** (GitHub API integration)
 - ✅ **Smart TTY handling** (conditional -it)
 - ✅ **Container naming** (<tool>_<version>)
-- ✅ **UID/GID mapping** (stesso utente host)
-- ✅ **HOME directory preservation**
+- ✅ **UID/GID mapping** (stesso utente host per auto-generated Dockerfiles)
+- ✅ **HOME directory preservation** (per auto-generated Dockerfiles)
+- ✅ **SSH repository support** (auto-detect e system git fallback)
+- ✅ **Bash script execution** (direct execution per tool bash type)
+- ✅ **Custom Dockerfile detection** (adaptive execution strategy)
 
 ### Infrastructure
 - ✅ **GitHub Actions CI/CD**
@@ -53,13 +56,14 @@
 
 ---
 
-## 🎯 Progress Update (2026-02-16)
+## 🎯 Progress Update (2026-02-17)
 
 ### ✅ **COMPLETATO:**
 - **Phase 0 (MVP):** ✅ 100% - Compilazione, clone, run base
 - **Phase 1 (Venv):** ✅ 100% - Auto-setup Python con venv + Docker support
 - **Phase 2a (Multi-Registry):** ✅ 100% - Registry system con support multi-registry
-- **Infrastructure:** ✅ 100% - CI/CD, GitHub Pages, self-update
+- **Infrastructure:** ✅ 100% - CI/CD, GitHub Pages, self-update, pre-commit hooks
+- **SSH & Bash Support:** ✅ 100% - SSH repos, bash execution, custom Dockerfiles
 
 ### 🔄 **IN PROGRESS:**
 - Testing: self-update end-to-end con release live
@@ -69,9 +73,12 @@
 1. ✅ Setup GitHub repository pubblico (DONE)
 2. ✅ CI/CD con GitHub Actions (DONE)
 3. ✅ First release v0.2.0 (DONE)
-4. 🔜 Test self-update mechanism
-5. 🔜 Espandere registry con tool personali
-6. 🔜 Setup pre-commit hooks per formatting
+4. ✅ Setup pre-commit hooks per formatting (DONE)
+5. ✅ SSH repository support (DONE)
+6. ✅ Bash script execution (DONE)
+7. ✅ Custom Dockerfile handling (DONE)
+8. 🔜 Test self-update mechanism
+9. 🔜 Espandere registry con tool personali
 
 ---
 
@@ -1415,6 +1422,176 @@ poetry = true  # or npm, conda, etc.
 - Private repos should be from trusted sources
 - Review script code before first run
 - Consider Docker isolation for untrusted tools
+
+---
+
+## 🐳 Docker Custom Dockerfile Support
+
+### Custom vs Auto-Generated Dockerfiles
+
+TuxBox automatically detects whether a tool provides its own Dockerfile and adjusts execution strategy accordingly.
+
+**Detection:** Checks for `Dockerfile` existence in tool repository root.
+
+### Execution Strategies
+
+#### Custom Dockerfile (tool provides Dockerfile)
+
+When a tool has its own Dockerfile, tbox trusts the tool's configuration:
+
+**Container execution:**
+- ✅ **Run as root** (no `--user` flag)
+  - Custom Dockerfiles may install packages in `/root/.local`
+  - User-specific paths may not be accessible to non-root users
+- ✅ **Preserve HOME=/root** (no custom `HOME` env)
+  - Python looks for packages in `$HOME/.local/lib/pythonX.X/site-packages`
+  - Overriding HOME breaks package resolution
+- ✅ **Use Dockerfile ENTRYPOINT** (no command override)
+  - Respects tool's intended entry point
+  - Only passes user arguments to ENTRYPOINT
+
+**Example:**
+```bash
+# tbox executes:
+docker run --rm -it \
+  -v ~/.ssh:~/.ssh:ro \
+  -v ~/.config:~/.config \
+  tuxbox-cert_checker check --host google.com
+  # Uses ENTRYPOINT from Dockerfile, just passes args
+```
+
+#### Auto-Generated Dockerfile (no Dockerfile in tool)
+
+For tools without Dockerfile, tbox generates `Dockerfile.tuxbox`:
+
+**Container execution:**
+- ✅ **Run as current user** (`--user uid:gid`)
+  - Preserves file permissions for created files
+  - Security: non-root container execution
+- ✅ **Set custom HOME** (`-e HOME=$USER_HOME`)
+  - Maintains user environment consistency
+- ✅ **Execute explicit command** (`python3 -m tool_name`)
+  - Auto-generated images have no ENTRYPOINT
+  - Full command must be provided
+
+**Example:**
+```bash
+# tbox executes:
+docker run --rm -it \
+  --user 501:502 \
+  -e HOME=/Users/username \
+  -v ~/.ssh:~/.ssh:ro \
+  -v ~/.config:~/.config \
+  tuxbox-sshmenuc python3 -m sshmenuc [args]
+  # Explicit command + args
+```
+
+### Common Issues with Custom Dockerfiles
+
+#### Issue: "ModuleNotFoundError" in Custom Dockerfile
+
+**Symptom:**
+```
+ModuleNotFoundError: No module named 'click'
+```
+
+**Cause:**
+Dockerfile installs packages with `pip install --user` in `/root/.local`, but:
+1. Container runs as non-root user → cannot access `/root/`
+2. HOME is overridden → Python looks in wrong directory
+
+**Solutions:**
+
+**Option 1: Fix Dockerfile (RECOMMENDED)**
+Install packages system-wide instead of user-local:
+```dockerfile
+# ❌ BEFORE (broken with tbox)
+RUN pip install --no-cache-dir --user -r requirements.txt
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+# ✅ AFTER (works with tbox)
+RUN pip install --no-cache-dir -r requirements.txt
+# Packages go to /usr/local/lib/pythonX.X/site-packages
+# Accessible to all users
+```
+
+**Option 2: Trust Custom Dockerfile (tbox already does this)**
+TuxBox automatically:
+- Runs as root for custom Dockerfiles
+- Preserves HOME=/root
+- Uses Dockerfile ENTRYPOINT
+
+### Best Practices for Custom Dockerfiles
+
+**✅ DO:**
+```dockerfile
+# Install system-wide (accessible to all users)
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Use ENTRYPOINT for consistent execution
+ENTRYPOINT ["python", "-m", "your_tool"]
+CMD ["--help"]
+
+# Multi-stage build for smaller images
+FROM python:3.11-slim AS builder
+# ... build stage ...
+FROM python:3.11-slim
+COPY --from=builder /usr/local/lib /usr/local/lib
+```
+
+**❌ DON'T:**
+```dockerfile
+# Avoid user-local installations
+RUN pip install --user -r requirements.txt  # Breaks with non-root
+
+# Avoid hardcoding user/home
+USER appuser  # May conflict with tbox volume mounts
+ENV HOME=/home/appuser  # May be overridden
+```
+
+### Testing Custom Dockerfile Tools
+
+When adding a tool with custom Dockerfile:
+
+1. **Test directly first:**
+   ```bash
+   cd ~/.tuxbox/tools/tool_name
+   docker build -t test-tool .
+   docker run --rm test-tool --help
+   ```
+
+2. **Test with tbox:**
+   ```bash
+   tbox run tool_name --help
+   ```
+
+3. **Verify packages accessible:**
+   ```bash
+   docker run --rm --entrypoint python tuxbox-tool_name \
+     -c "import sys; print('\n'.join(sys.path)); import click"
+   ```
+
+4. **Check as non-root (if suspicious):**
+   ```bash
+   docker run --rm --user $(id -u):$(id -g) \
+     --entrypoint python tuxbox-tool_name \
+     -c "import click; print('OK')"
+   # Should work if Dockerfile uses system-wide install
+   # Should fail if Dockerfile uses --user flag
+   ```
+
+### Registry Configuration
+
+No special configuration needed - tbox auto-detects:
+
+```toml
+[tools.tool_with_dockerfile]
+name = "tool_with_dockerfile"
+repo = "https://github.com/user/tool"
+type = "python"  # or any type
+# tbox checks for Dockerfile automatically
+```
 
 ---
 
