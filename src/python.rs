@@ -270,11 +270,11 @@ pub fn run_in_venv(tool_config: &ToolConfig, tool_path: &Path, args: &[String]) 
     // Setup venv
     let venv_path = setup_venv(tool_path)?;
 
-    // Check Python version requirement before attempting installation.
-    // Shows a clear error (e.g. "requires Python >=3.8, you have 3.6") instead of
-    // letting pip fail with a confusing "No matching distribution found" message.
-    if let Some(err) = check_python_compatibility(tool_config, &venv_path) {
-        anyhow::bail!("{}", err);
+    // Warn if the venv Python does not meet the tool's version requirement.
+    // This is a soft warning — we still attempt to run in case the tool works
+    // anyway (e.g. older package versions are available).
+    if let Some(warn) = check_python_compatibility(tool_config, &venv_path) {
+        eprintln!("  {} {}", "⚠".yellow(), warn.yellow());
     }
 
     // Install requirements
