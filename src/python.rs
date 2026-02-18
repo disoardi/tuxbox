@@ -35,15 +35,22 @@ pub fn detect_python() -> Result<String> {
     )
 }
 
+/// Returns true if a Python >= 3.8 executable is available on the system.
+fn has_python38_or_newer() -> bool {
+    // detect_python() tries versioned names (python3.8 … python3.13) before python3/python.
+    // If it returns something other than the generic names, we have Python 3.8+.
+    detect_python()
+        .map(|p| p != "python3" && p != "python")
+        .unwrap_or(false)
+}
+
 /// Create or verify virtual environment for a tool.
-/// Recreates the venv if its Python is older than 3.8 (incompatible with modern packages).
+/// Recreates the venv only when its Python is < 3.8 AND a newer Python is actually available.
 pub fn setup_venv(tool_path: &Path) -> Result<PathBuf> {
     let venv_path = tool_path.join("venv");
 
     if venv_path.exists() {
-        // Check if the existing venv Python meets the 3.8 minimum.
-        // Old Python (e.g. 3.6 on RHEL) cannot build modern Poetry packages.
-        let is_too_old = get_venv_executable(&venv_path, "python")
+        let venv_is_old = get_venv_executable(&venv_path, "python")
             .ok()
             .and_then(|py| {
                 Command::new(&py)
@@ -55,9 +62,10 @@ pub fn setup_venv(tool_path: &Path) -> Result<PathBuf> {
                     .ok()
             })
             .map(|o| !o.status.success())
-            .unwrap_or(false); // If we can't check, assume it's fine
+            .unwrap_or(false);
 
-        if is_too_old {
+        if venv_is_old && has_python38_or_newer() {
+            // A better Python is available — recreate the venv to use it.
             println!(
                 "  {} Existing venv uses Python < 3.8, recreating with newer Python...",
                 "→".yellow()
@@ -129,13 +137,13 @@ pub fn install_requirements(venv_path: &Path, tool_path: &Path) -> Result<()> {
                 return Ok(());
             }
 
-            // pip install -e . failed; try requirements.txt as a fallback
-            if !requirements_path.exists() {
-                anyhow::bail!(
-                    "Failed to install Python package via pyproject.toml and no \
-                     requirements.txt found. The tool may require Python >= 3.8 or \
-                     a newer system. Check the tool's README for installation instructions."
-                );
+            // pip install -e . failed (e.g. old poetry-core on Python 3.6 that does not
+            // support [tool.poetry.group.*]). Try requirements.txt first, then the
+            // Poetry-specific fallback that parses deps directly from pyproject.toml.
+            if requirements_path.exists() {
+                // fall through to requirements.txt block below
+            } else {
+                return install_poetry_deps_fallback(&pip, venv_path, tool_path);
             }
         }
     }
@@ -159,6 +167,99 @@ pub fn install_requirements(venv_path: &Path, tool_path: &Path) -> Result<()> {
     }
 
     // No dependency files found, skip
+    Ok(())
+}
+
+/// Fallback installer for Poetry-managed projects on systems with old Python/poetry-core.
+///
+/// When `pip install -e .` fails (e.g. Python 3.6 cannot build a package that uses
+/// `[tool.poetry.group.*]` because poetry-core for 3.6 is too old), this extracts the
+/// package names from `[tool.poetry.dependencies]` and installs them with plain pip.
+/// Then adds a `.pth` file to make the tool directory importable, replacing what
+/// `pip install -e .` would have done for the import path.
+fn install_poetry_deps_fallback(pip: &Path, venv_path: &Path, tool_path: &Path) -> Result<()> {
+    let pyproject_path = tool_path.join("pyproject.toml");
+    let content =
+        std::fs::read_to_string(&pyproject_path).context("Failed to read pyproject.toml")?;
+
+    let doc: toml::Value = toml::from_str(&content).context("Failed to parse pyproject.toml")?;
+
+    let deps_table = doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("dependencies"))
+        .and_then(|d| d.as_table());
+
+    let Some(deps_table) = deps_table else {
+        // No [tool.poetry.dependencies] — nothing more we can do.
+        anyhow::bail!(
+            "Failed to install package: pip install -e . failed and no \
+             [tool.poetry.dependencies] found in pyproject.toml. \
+             The tool may require a newer Python or manual installation."
+        );
+    };
+
+    // Collect installable package names; skip "python" itself and git/path/url deps.
+    let packages: Vec<&str> = deps_table
+        .iter()
+        .filter(|(k, v)| {
+            if k.to_lowercase() == "python" {
+                return false;
+            }
+            if let Some(t) = v.as_table() {
+                if t.contains_key("git") || t.contains_key("path") || t.contains_key("url") {
+                    return false;
+                }
+            }
+            true
+        })
+        .map(|(k, _)| k.as_str())
+        .collect();
+
+    if packages.is_empty() {
+        return Ok(());
+    }
+
+    println!(
+        "  {} Installing {} dependencies (Poetry fallback)...",
+        "→".cyan(),
+        packages.len()
+    );
+
+    let mut args = vec!["install"];
+    args.extend(packages.iter().copied());
+
+    let status = Command::new(pip)
+        .args(&args)
+        .current_dir(tool_path)
+        .status()
+        .context("Failed to install dependencies")?;
+
+    if !status.success() {
+        anyhow::bail!("Failed to install Poetry dependencies from pyproject.toml");
+    }
+
+    // Add the tool directory to the venv's sys.path via a .pth file so that
+    // `python -m <tool>` works without a full editable install.
+    let python = get_venv_executable(venv_path, "python")?;
+    let site_output = Command::new(&python)
+        .args(["-c", "import site; print(site.getsitepackages()[0])"])
+        .output()
+        .context("Failed to determine site-packages directory")?;
+
+    let site_packages = PathBuf::from(
+        String::from_utf8_lossy(&site_output.stdout)
+            .trim()
+            .to_string(),
+    );
+
+    std::fs::write(
+        site_packages.join("tuxbox-tool.pth"),
+        format!("{}\n", tool_path.display()),
+    )
+    .context("Failed to create .pth file")?;
+
+    println!("  {} Dependencies installed (Poetry fallback)", "✓".green());
     Ok(())
 }
 
