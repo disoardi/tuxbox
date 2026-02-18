@@ -8,16 +8,25 @@ use std::process::Command;
 use crate::config::ToolConfig;
 use crate::error::TuxBoxError;
 
-/// Detect available Python executable (python3 preferred)
+/// Detect the best available Python executable (prefers 3.8+ for modern package support)
 pub fn detect_python() -> Result<String> {
-    // Try python3 first (most common on modern systems)
-    if Command::new("python3").arg("--version").output().is_ok() {
-        return Ok("python3".to_string());
-    }
+    // Try versioned executables from newest to oldest (3.8 minimum for modern pyproject.toml).
+    // Systems like RHEL/CentOS may have python3.9 or python3.8 alongside the default python3.6.
+    let candidates = [
+        "python3.13",
+        "python3.12",
+        "python3.11",
+        "python3.10",
+        "python3.9",
+        "python3.8",
+        "python3",
+        "python",
+    ];
 
-    // Fallback to python
-    if Command::new("python").arg("--version").output().is_ok() {
-        return Ok("python".to_string());
+    for candidate in &candidates {
+        if Command::new(candidate).arg("--version").output().is_ok() {
+            return Ok(candidate.to_string());
+        }
     }
 
     Err(
@@ -26,20 +35,44 @@ pub fn detect_python() -> Result<String> {
     )
 }
 
-/// Create or verify virtual environment for a tool
+/// Create or verify virtual environment for a tool.
+/// Recreates the venv if its Python is older than 3.8 (incompatible with modern packages).
 pub fn setup_venv(tool_path: &Path) -> Result<PathBuf> {
     let venv_path = tool_path.join("venv");
 
     if venv_path.exists() {
-        // Venv already exists
-        return Ok(venv_path);
+        // Check if the existing venv Python meets the 3.8 minimum.
+        // Old Python (e.g. 3.6 on RHEL) cannot build modern Poetry packages.
+        let is_too_old = get_venv_executable(&venv_path, "python")
+            .ok()
+            .and_then(|py| {
+                Command::new(&py)
+                    .args([
+                        "-c",
+                        "import sys; exit(0 if sys.version_info >= (3, 8) else 1)",
+                    ])
+                    .output()
+                    .ok()
+            })
+            .map(|o| !o.status.success())
+            .unwrap_or(false); // If we can't check, assume it's fine
+
+        if is_too_old {
+            println!(
+                "  {} Existing venv uses Python < 3.8, recreating with newer Python...",
+                "→".yellow()
+            );
+            let _ = std::fs::remove_dir_all(&venv_path);
+            // Fall through to creation below
+        } else {
+            return Ok(venv_path);
+        }
     }
 
     println!("  {} Creating Python virtual environment...", "→".cyan());
 
     let python = detect_python()?;
 
-    // Create venv
     let status = Command::new(&python)
         .args(["-m", "venv", "venv"])
         .current_dir(tool_path)
@@ -95,7 +128,15 @@ pub fn install_requirements(venv_path: &Path, tool_path: &Path) -> Result<()> {
                 println!("  {} Package and dependencies installed", "✓".green());
                 return Ok(());
             }
-            // Fall through to requirements.txt if pip install -e . fails
+
+            // pip install -e . failed; try requirements.txt as a fallback
+            if !requirements_path.exists() {
+                anyhow::bail!(
+                    "Failed to install Python package via pyproject.toml and no \
+                     requirements.txt found. The tool may require Python >= 3.8 or \
+                     a newer system. Check the tool's README for installation instructions."
+                );
+            }
         }
     }
 
