@@ -270,6 +270,13 @@ pub fn run_in_venv(tool_config: &ToolConfig, tool_path: &Path, args: &[String]) 
     // Setup venv
     let venv_path = setup_venv(tool_path)?;
 
+    // Check Python version requirement before attempting installation.
+    // Shows a clear error (e.g. "requires Python >=3.8, you have 3.6") instead of
+    // letting pip fail with a confusing "No matching distribution found" message.
+    if let Some(err) = check_python_compatibility(tool_config, &venv_path) {
+        anyhow::bail!("{}", err);
+    }
+
     // Install requirements
     install_requirements(&venv_path, tool_path)?;
 
@@ -321,6 +328,71 @@ pub fn run_in_venv(tool_config: &ToolConfig, tool_path: &Path, args: &[String]) 
     }
 
     Ok(())
+}
+
+/// Check if the venv Python meets the tool's version requirement.
+/// Returns Some(error_message) if incompatible, None if OK or unknown.
+fn check_python_compatibility(tool_config: &ToolConfig, venv_path: &Path) -> Option<String> {
+    let spec = tool_config.python_version.as_deref()?;
+    let (req_major, req_minor) = min_required_python(spec)?;
+
+    let venv_python = get_venv_executable(venv_path, "python").ok()?;
+    let output = Command::new(&venv_python)
+        .args([
+            "-c",
+            "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}')",
+        ])
+        .output()
+        .ok()?;
+    let installed = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let parts: Vec<u32> = installed
+        .split('.')
+        .filter_map(|p| p.parse().ok())
+        .collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let (inst_major, inst_minor) = (parts[0], parts[1]);
+
+    if inst_major < req_major || (inst_major == req_major && inst_minor < req_minor) {
+        Some(format!(
+            "This tool requires Python {spec} (minimum {req_major}.{req_minor}), \
+             but the system only provides Python {installed}.\n  \
+             Install Python {req_major}.{req_minor}+ to use this tool."
+        ))
+    } else {
+        None
+    }
+}
+
+/// Parse the minimum Python version from a version specifier string.
+/// Handles common Poetry/pip formats: ">=3.8", "^3.9", "~3.8", "3.8", ">=3.8,<4.0"
+fn min_required_python(spec: &str) -> Option<(u32, u32)> {
+    let mut min_version: Option<(u32, u32)> = None;
+
+    for constraint in spec.split(',') {
+        let constraint = constraint.trim();
+        // Skip upper-bound constraints (< or <=) — they don't define the minimum
+        if constraint.starts_with('<') {
+            continue;
+        }
+        // Strip operator characters to get the bare version number
+        let version_str = constraint.trim_start_matches(['>', '=', '^', '~', '!']);
+        let parts: Vec<u32> = version_str
+            .split('.')
+            .filter_map(|p| p.parse().ok())
+            .collect();
+        if parts.len() >= 2 {
+            let v = (parts[0], parts[1]);
+            // Keep the most restrictive (highest) lower bound seen so far
+            min_version = Some(match min_version {
+                Some(cur) if cur >= v => cur,
+                _ => v,
+            });
+        }
+    }
+
+    min_version
 }
 
 /// Get executable path from venv (handles OS differences)

@@ -236,6 +236,7 @@ pub fn registry_tool_to_config(tool: &RegistryTool) -> ToolConfig {
             run: c.run.clone(),
             setup: c.setup.clone(),
         }),
+        python_version: tool.dependencies.as_ref().and_then(|d| d.python.clone()),
     }
 }
 

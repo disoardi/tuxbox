@@ -75,6 +75,8 @@ pub struct ToolConfig {
     pub tool_type: Option<String>,
     pub isolation: Option<IsolationStrategy>,
     pub commands: Option<Commands>,
+    /// Minimum Python version requirement from registry (e.g. ">=3.8", "^3.9")
+    pub python_version: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

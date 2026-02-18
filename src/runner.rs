@@ -120,6 +120,7 @@ fn get_hardcoded_tool_config(tool_name: &str) -> Result<ToolConfig> {
                 setup: Some("pip3 install -r requirements.txt".to_string()),
                 run: "python3 -m sshmenuc".to_string(),
             }),
+            python_version: None,
         }),
         "test-tool" => Ok(ToolConfig {
             name: "test-tool".to_string(),
@@ -132,6 +133,7 @@ fn get_hardcoded_tool_config(tool_name: &str) -> Result<ToolConfig> {
                 setup: None,
                 run: "./run.sh".to_string(),
             }),
+            python_version: None,
         }),
         _ => Err(TuxBoxError::ToolNotFound(tool_name.to_string()).into()),
     }
