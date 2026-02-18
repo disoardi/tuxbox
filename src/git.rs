@@ -210,6 +210,9 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
                 behind,
                 if behind == 1 { "commit" } else { "commits" }
             );
+            // Invalidate tool state so the next `tbox run` re-installs dependencies
+            // against the updated source.
+            crate::tool_state::ToolState::invalidate(&tool_path);
         }
         Err(e) => {
             eprintln!(

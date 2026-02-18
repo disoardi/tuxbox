@@ -7,6 +7,7 @@ use std::process::Command;
 
 use crate::config::ToolConfig;
 use crate::error::TuxBoxError;
+use crate::tool_state::ToolState;
 
 /// Detect the best available Python executable (prefers 3.8+ for modern package support)
 pub fn detect_python() -> Result<String> {
@@ -88,6 +89,40 @@ fn find_python_for_version(min_major: u32, min_minor: u32) -> Option<String> {
     }
 
     best.map(|(_, _, path)| path.to_string_lossy().to_string())
+}
+
+/// Resolve the Python interpreter for a tool based on its version requirement.
+///
+/// Returns `(python_override, min_version)`:
+/// - `python_override`: a specific Python path to use (from pyenv or versioned name),
+///   or None if the system default is fine.
+/// - `min_version`: minimum (major, minor) the venv must satisfy.
+fn resolve_python(tool_config: &ToolConfig) -> Result<(Option<String>, (u32, u32))> {
+    if let Some(spec) = &tool_config.python_version {
+        if let Some((min_major, min_minor)) = min_required_python(spec) {
+            match find_python_for_version(min_major, min_minor) {
+                Some(py) => {
+                    println!("  {} Using Python: {}", "→".cyan(), py);
+                    return Ok((Some(py), (min_major, min_minor)));
+                }
+                None => {
+                    anyhow::bail!(
+                        "This tool requires Python >={min_major}.{min_minor}, \
+                         but no compatible Python was found on this system.\n\n\
+                         Options to install Python {min_major}.{min_minor}+:\n\n\
+                         1. Package manager (RHEL/CentOS — requires root):\n\
+                            sudo yum install python3{min_minor}\n\n\
+                         2. pyenv — install any Python version without root:\n\
+                            curl https://pyenv.run | bash\n\
+                            # restart the shell, then:\n\
+                            pyenv install 3.{min_minor}\n\
+                            pyenv global 3.{min_minor}"
+                    );
+                }
+            }
+        }
+    }
+    Ok((None, (3u32, 8u32)))
 }
 
 /// Create or verify virtual environment for a tool.
@@ -332,98 +367,89 @@ fn install_poetry_deps_fallback(pip: &Path, venv_path: &Path, tool_path: &Path) 
     Ok(())
 }
 
-/// Run a Python tool using the venv
+/// Run a Python tool using the venv.
+///
+/// On first run: resolves the right Python, creates the venv, installs
+/// dependencies, saves a `.tuxbox-state.toml` file.
+///
+/// On subsequent runs: reads the state file and skips setup entirely.
 pub fn run_in_venv(tool_config: &ToolConfig, tool_path: &Path, args: &[String]) -> Result<()> {
     println!("  {} Using local Python venv", "🐍".cyan());
 
-    // Determine required Python version and find a suitable interpreter.
-    // When the tool specifies a minimum Python version, we search for it:
-    //   1. Versioned names in PATH (python3.11, python3.10, ...)
-    //   2. pyenv installations (~/.pyenv/versions/)
-    // If no suitable Python is found, we bail with installation instructions.
-    let (python_override, min_version) = if let Some(spec) = &tool_config.python_version {
-        if let Some((min_major, min_minor)) = min_required_python(spec) {
-            match find_python_for_version(min_major, min_minor) {
-                Some(py) => {
-                    println!("  {} Using Python: {}", "→".cyan(), py);
-                    (Some(py), (min_major, min_minor))
-                }
-                None => {
-                    anyhow::bail!(
-                        "This tool requires Python >={min_major}.{min_minor}, \
-                         but no compatible Python was found on this system.\n\n\
-                         Options to install Python {min_major}.{min_minor}+:\n\n\
-                         1. Package manager (RHEL/CentOS — requires root):\n\
-                            sudo yum install python3{min_minor}\n\n\
-                         2. pyenv — install any Python version without root:\n\
-                            curl https://pyenv.run | bash\n\
-                            # restart the shell, then:\n\
-                            pyenv install 3.{min_minor}\n\
-                            pyenv global 3.{min_minor}"
-                    );
-                }
-            }
-        } else {
-            (None, (3u32, 8u32))
-        }
+    let venv_path = if let Some(state) = ToolState::load(tool_path) {
+        // Fast path: already installed — skip all setup
+        println!("  {} Environment ready", "✓".green());
+        state
+            .venv
+            .ok_or_else(|| TuxBoxError::ExecutionError("State file missing venv entry".into()))?
+            .path
     } else {
-        (None, (3u32, 8u32))
+        // First-run path: resolve Python, create venv, install deps
+        let (python_override, min_version) = resolve_python(tool_config)?;
+        let venv_path = setup_venv(tool_path, python_override.as_deref(), min_version)?;
+        install_requirements(&venv_path, tool_path)?;
+
+        // Persist state so future runs skip this entire block
+        let python_used = python_override.unwrap_or_else(|| detect_python().unwrap_or_default());
+        if let Err(e) = ToolState::for_venv(venv_path.clone(), python_used).save(tool_path) {
+            // Non-fatal: a failed save just means next run will reinstall
+            eprintln!("  {} Could not save tool state: {}", "⚠".yellow(), e);
+        }
+
+        venv_path
     };
 
-    // Setup venv — uses python_override when specified, recreates if needed
-    let venv_path = setup_venv(tool_path, python_override.as_deref(), min_version)?;
+    execute_in_venv(&venv_path, tool_path, tool_config, args)
+}
 
-    // Install requirements
-    install_requirements(&venv_path, tool_path)?;
+/// Execute the tool inside the venv by simulating `source venv/bin/activate`.
+///
+/// Prepends `venv/bin` to PATH and sets VIRTUAL_ENV in the **child process only**.
+/// The parent tbox process environment is never modified — no cleanup needed.
+fn execute_in_venv(
+    venv_path: &Path,
+    tool_path: &Path,
+    tool_config: &ToolConfig,
+    args: &[String],
+) -> Result<()> {
+    let run_command = tool_config
+        .commands
+        .as_ref()
+        .map(|c| c.run.as_str())
+        .ok_or_else(|| {
+            TuxBoxError::ExecutionError("No run command specified for this tool".into())
+        })?;
 
-    // Get python executable from venv
-    let python = get_venv_executable(&venv_path, "python")?;
-
-    // Execute the tool
     println!("  {} Running tool...", "→".cyan());
 
-    // Parse run command
-    let run_command = if let Some(commands) = &tool_config.commands {
-        &commands.run
-    } else {
-        return Err(
-            TuxBoxError::ExecutionError("No run command specified for this tool".into()).into(),
-        );
-    };
+    // Simulate `source venv/bin/activate`: prepend venv/bin to PATH.
+    // This resolves python3, pip, and any console scripts (e.g. cert-checker)
+    // installed by pip without needing to know the tool name in advance.
+    // The env modification is scoped to the child process only.
+    let current_path = std::env::var("PATH").unwrap_or_default();
 
-    // Build command - handle three cases:
-    //   1. "python3 -m module" / "python script.py"  → use venv python, strip prefix
-    //   2. "cert-checker" / "my-script" (console script) → run venv/bin/<name> directly
-    //   3. anything else → run with venv python as-is
+    #[cfg(unix)]
+    let venv_bin = venv_path.join("bin");
+    #[cfg(windows)]
+    let venv_bin = venv_path.join("Scripts");
+
+    let activated_path = format!("{}:{}", venv_bin.display(), current_path);
+
     let parts: Vec<&str> = run_command.split_whitespace().collect();
     if parts.is_empty() {
         return Err(TuxBoxError::ExecutionError("Empty run command".into()).into());
     }
 
-    let is_python_prefix = parts[0] == "python" || parts[0] == "python3";
+    let mut cmd = Command::new(parts[0]);
+    cmd.current_dir(tool_path);
+    cmd.env("PATH", &activated_path);
+    cmd.env("VIRTUAL_ENV", venv_path);
 
-    // Case 2: console script installed in venv/bin/
-    let venv_script = venv_path.join("bin").join(parts[0]);
-    let (mut cmd, extra_parts) = if !is_python_prefix && venv_script.exists() {
-        let mut c = Command::new(&venv_script);
-        c.current_dir(tool_path);
-        (c, &parts[1..])
-    } else {
-        // Case 1 & 3: run via venv python
-        let mut c = Command::new(&python);
-        c.current_dir(tool_path);
-        let start_idx = if is_python_prefix { 1 } else { 0 };
-        (c, &parts[start_idx..])
-    };
-
-    if !extra_parts.is_empty() {
-        cmd.args(extra_parts);
+    if parts.len() > 1 {
+        cmd.args(&parts[1..]);
     }
-
-    // Add user arguments
     cmd.args(args);
 
-    // Execute
     let status = cmd.status().context("Failed to execute tool")?;
 
     if !status.success() {
@@ -489,7 +515,6 @@ mod tests {
 
     #[test]
     fn test_detect_python() {
-        // Should find python3 or python
         let result = detect_python();
         assert!(result.is_ok() || result.is_err()); // Just verify it runs
     }

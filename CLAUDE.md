@@ -1358,6 +1358,99 @@ poetry = true
 
 ---
 
+## 🐍 Python Venv Execution — Generic Activation Pattern
+
+### The Rule
+
+**Never dispatch tool commands with special-case logic** (e.g. "if it's in venv/bin do X,
+otherwise do Y"). This breaks portability and couples tbox to tool internals.
+
+**The only correct approach**: simulate `source venv/bin/activate` by prepending `venv/bin`
+to PATH in the **child process environment**. This resolves all command types generically:
+- `python3 -m tool` → uses venv's python3
+- `cert-checker` → console script in venv/bin, found via PATH
+- `any-script` → shell script in venv/bin, found via PATH
+
+The change is **scoped to the child process only** — tbox's own process is unaffected,
+no cleanup needed.
+
+**Correct implementation:**
+```rust
+fn execute_in_venv(venv_path: &Path, tool_path: &Path, run_command: &str, args: &[String]) -> Result<()> {
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    #[cfg(unix)]
+    let venv_bin = venv_path.join("bin");
+    let activated_path = format!("{}:{}", venv_bin.display(), current_path);
+
+    let parts: Vec<&str> = run_command.split_whitespace().collect();
+    let mut cmd = Command::new(parts[0]);
+    cmd.current_dir(tool_path);
+    cmd.env("PATH", &activated_path);      // venv activation
+    cmd.env("VIRTUAL_ENV", venv_path);     // standard venv marker
+    if parts.len() > 1 { cmd.args(&parts[1..]); }
+    cmd.args(args);
+    // spawn/exec...
+}
+```
+
+**Never do this:**
+```rust
+// BAD: special-casing
+let venv_bin_cmd = venv_path.join("bin").join(&run_cmd);
+if venv_bin_cmd.exists() {
+    Command::new(venv_bin_cmd)  // fragile, non-generic
+} else {
+    Command::new("python").arg(&run_cmd)  // wrong for console scripts
+}
+```
+
+---
+
+## 💾 Tool State File — Skip Reinstall on Subsequent Runs
+
+### The Problem
+
+Without state tracking, every `tbox run` re-checks Python version, re-validates the venv,
+and potentially re-installs dependencies. On slow servers this is minutes of wasted time.
+
+### The Pattern
+
+After a **successful first install**, write `.tuxbox-state.toml` to the tool directory:
+```toml
+version = "1"
+method = "venv"
+
+[venv]
+path = "/home/user/.tuxbox/tools/my_tool/venv"
+python = "/home/user/.pyenv/versions/3.9.25/bin/python3"
+```
+
+On **subsequent runs**, load the state file → if valid (venv dir still exists), skip
+all setup and jump directly to execution.
+
+**State lifecycle:**
+- **Written**: after `run_in_venv` completes first install successfully
+- **Read**: at the start of every `tbox run` — fast path if valid
+- **Invalidated** (file deleted): when `tbox update` pulls new commits, so the
+  next run re-installs deps against updated source
+
+**Key invariant**: `ToolState::invalidate()` MUST be called after every successful
+fast-forward merge in `update_tool`.
+
+**Validation on load** (always check, never trust blindly):
+```rust
+pub fn load(tool_path: &Path) -> Option<Self> {
+    let state: ToolState = toml::from_str(&content).ok()?;
+    // Validate venv still exists on disk
+    if let Some(ref venv) = state.venv {
+        if !venv.path.exists() { return None; }
+    }
+    Some(state)
+}
+```
+
+---
+
 ## 🔐 SSH Repository Support
 
 ### SSH Clone Strategy

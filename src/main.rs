@@ -23,6 +23,7 @@ mod python;
 mod registry;
 mod runner;
 mod selfupdate;
+mod tool_state;
 
 use anyhow::Result;
 use clap::Parser;
