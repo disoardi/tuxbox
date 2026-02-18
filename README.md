@@ -24,7 +24,19 @@ tbox run sshmenuc
 
 ### Installation
 
-#### Option 1: Download Pre-built Binary (Recommended)
+#### Option 1: One-liner Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/disoardi/tuxbox/main/install.sh | sh
+```
+
+Installs `tbox` to `~/.local/bin` (no sudo needed). To install system-wide:
+
+```bash
+TBOX_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/disoardi/tuxbox/main/install.sh | sh
+```
+
+#### Option 2: Download Pre-built Binary (Manual)
 
 **Linux (x86_64)**
 ```bash
