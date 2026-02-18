@@ -64,6 +64,16 @@ pub fn install_requirements(venv_path: &Path, tool_path: &Path) -> Result<()> {
     // Get pip executable from venv
     let pip = get_venv_executable(venv_path, "pip")?;
 
+    // Upgrade pip silently before installing dependencies.
+    // Old pip versions (e.g. 9.0.3 from RHEL/CentOS system Python) return exit code 0
+    // even when install fails (e.g. "File 'setup.py' not found"), causing silent failures.
+    // Modern pip (>=19) handles PEP 517/518 builds correctly without setup.py.
+    // Best-effort: continue even if upgrade fails (air-gapped networks, etc.).
+    let _ = Command::new(&pip)
+        .args(["install", "--upgrade", "pip"])
+        .current_dir(tool_path)
+        .output(); // suppress output, non-fatal
+
     // Use `pip install -e .` only for proper Python packages with a [build-system]
     // section in pyproject.toml (PEP 517/518). Many tools use pyproject.toml only
     // for configuration (linting, formatting) without being installable packages.
