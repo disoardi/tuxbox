@@ -1309,6 +1309,55 @@ git pushall-tags
 
 ---
 
+## 🦀 Rust / git2 Best Practices
+
+### git2 StatusOptions — Always Explicit
+
+**Never** use `repo.statuses(None)` to check if a working directory is clean.
+The default options include **untracked files**, causing false positives for
+tbox-managed directories like `venv/` that live inside tool repos.
+
+**Correct pattern:**
+```rust
+let mut opts = git2::StatusOptions::new();
+opts.include_untracked(false);
+opts.include_ignored(false);
+let statuses = repo.statuses(Some(&mut opts))?;
+if !statuses.is_empty() {
+    // actual tracked-file modifications only
+}
+```
+
+---
+
+## 📋 Registry: Python Version Policy
+
+### When to set `python = ">=X.Y"` in a registry entry
+
+The field must reflect the **minimum version the tool actually works with**,
+not the version declared in the tool's own `pyproject.toml`.
+
+**Rules:**
+- ✅ Set `python = ">=3.8"` only when a key dependency **genuinely does not
+  exist** for older Python (e.g. `cryptography>=41.0.0` requires Python 3.8+)
+- ❌ Do NOT copy the pyproject.toml constraint blindly — Poetry projects often
+  declare `python = "^3.9"` but their deps install fine on 3.6 via pip
+- If a tool works on Python 3.6 via the Poetry deps fallback, **omit** the
+  `python` field entirely or add a comment explaining why
+
+**Example:**
+```toml
+[tools.sshmenuc.dependencies]
+# No minimum Python enforced — works on 3.6+ via Poetry deps fallback
+requirements = "requirements.txt"
+
+[tools.cert_checker.dependencies]
+python = ">=3.8"   # cryptography>=41.0.0 does not exist for Python 3.6
+poetry = true
+```
+
+---
+
 ## 🔐 SSH Repository Support
 
 ### SSH Clone Strategy
