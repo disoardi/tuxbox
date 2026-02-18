@@ -8,26 +8,35 @@ REPO="disoardi/tuxbox"
 BINARY="tbox"
 DEFAULT_INSTALL_DIR="$HOME/.local/bin"
 
-# Colors (only when stdout is a terminal)
-# Use printf command substitution so variables hold actual ESC bytes,
-# not the literal string '\033[...' which printf %s would print as-is.
+# Colors (only when stdout is a terminal).
+# Variables hold the literal escape string (e.g. '\033[1m').
+# They MUST be used inside the printf FORMAT string (not as %s arguments)
+# so that printf processes the \033 octal sequence. See helper functions below.
 if [ -t 1 ]; then
-    RED=$(printf '\033[0;31m')
-    GREEN=$(printf '\033[0;32m')
-    YELLOW=$(printf '\033[1;33m')
-    CYAN=$(printf '\033[0;36m')
-    BOLD=$(printf '\033[1m')
-    NC=$(printf '\033[0m')
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    NC='\033[0m'
 else
     RED='' GREEN='' YELLOW='' CYAN='' BOLD='' NC=''
 fi
 
-status()  { printf "${CYAN}→${NC} %s\n" "$*"; }
-success() { printf "${GREEN}✓${NC} %s\n" "$*"; }
-warn()    { printf "${YELLOW}⚠${NC} %s\n" "$*"; }
-error()   { printf "${RED}✗${NC} %s\n" "$*" >&2; exit 1; }
+# Color vars are intentionally used in format strings (printf processes \033 escapes there)
+# shellcheck disable=SC2059
+status()    { printf "${CYAN}→${NC} %s\n" "$*"; }
+# shellcheck disable=SC2059
+success()   { printf "${GREEN}✓${NC} %s\n" "$*"; }
+# shellcheck disable=SC2059
+warn()      { printf "${YELLOW}⚠${NC} %s\n" "$*"; }
+# shellcheck disable=SC2059
+error()     { printf "${RED}✗${NC} %s\n" "$*" >&2; exit 1; }
+# shellcheck disable=SC2059
+bold_line() { printf "  ${BOLD}%s${NC}\n" "$*"; }
 
-printf '\n%s\n' "${BOLD}TuxBox Installer${NC}"
+# shellcheck disable=SC2059
+printf "\n${BOLD}TuxBox Installer${NC}\n"
 printf '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n'
 
 # ── Detect OS ────────────────────────────────────────────────────────────────
@@ -185,16 +194,20 @@ fi
 if [ "$PATH_ADDED" -eq 1 ]; then
     printf '\n'
     warn "Reload your shell to activate PATH:"
-    printf '  %s\n' "${BOLD}source ${RC_FILE}${NC}"
+    # shellcheck disable=SC2059
+    printf "  ${BOLD}source %s${NC}\n" "$RC_FILE"
 elif ! command -v "$BINARY" >/dev/null 2>&1; then
     printf '\n'
     warn "${INSTALL_DIR} is not in your PATH."
-    printf '  Add manually: %s\n' "${BOLD}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
+    # shellcheck disable=SC2016,SC2059
+    printf "  Add manually: ${BOLD}%s${NC}\n" 'export PATH="$HOME/.local/bin:$PATH"'
 fi
 
 # ── Done ───────────────────────────────────────────────────────────────────────
 
-printf '\n%s\n\n' "${GREEN}${BOLD}TuxBox is ready!${NC}"
-printf '  %s\n' "${BOLD}tbox init https://github.com/disoardi/tuxbox-registry${NC}"
-printf '  %s\n' "${BOLD}tbox list${NC}"
-printf '  %s\n\n' "${BOLD}tbox run <tool-name>${NC}"
+# shellcheck disable=SC2059
+printf "\n${GREEN}${BOLD}TuxBox is ready!${NC}\n\n"
+bold_line "tbox init https://github.com/disoardi/tuxbox-registry"
+bold_line "tbox list"
+bold_line "tbox run <tool-name>"
+printf '\n'
