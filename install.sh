@@ -25,8 +25,8 @@ success() { printf "${GREEN}✓${NC} %s\n" "$*"; }
 warn()    { printf "${YELLOW}⚠${NC} %s\n" "$*"; }
 error()   { printf "${RED}✗${NC} %s\n" "$*" >&2; exit 1; }
 
-printf "\n${BOLD}TuxBox Installer${NC}\n"
-printf "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+printf '\n%s\n' "${BOLD}TuxBox Installer${NC}"
+printf '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n'
 
 # ── Detect OS ────────────────────────────────────────────────────────────────
 
@@ -85,8 +85,6 @@ INSTALL_DIR="${TBOX_INSTALL_DIR:-}"
 if [ -z "$INSTALL_DIR" ]; then
     if [ "$(id -u)" -eq 0 ]; then
         INSTALL_DIR="/usr/local/bin"
-    elif [ -w "/usr/local/bin" ]; then
-        INSTALL_DIR="/usr/local/bin"
     else
         INSTALL_DIR="$DEFAULT_INSTALL_DIR"
     fi
@@ -140,23 +138,61 @@ chmod +x "$INSTALL_DIR/$BINARY"
 INSTALLED_VERSION=$("$INSTALL_DIR/$BINARY" --version 2>/dev/null || echo "unknown")
 success "Installed: ${INSTALLED_VERSION}  →  ${INSTALL_DIR}/${BINARY}"
 
-# ── PATH check ─────────────────────────────────────────────────────────────────
+# ── PATH setup ─────────────────────────────────────────────────────────────────
+# Auto-add to shell RC file if installing to ~/.local/bin and not already in PATH
 
-if ! command -v "$BINARY" >/dev/null 2>&1; then
+PATH_ADDED=0
+if [ "$INSTALL_DIR" = "$HOME/.local/bin" ]; then
+    # Detect user's default shell and RC file
     SHELL_NAME=$(basename "${SHELL:-bash}")
     case "$SHELL_NAME" in
-        zsh)  RC_FILE="\$HOME/.zshrc" ;;
-        fish) RC_FILE="\$HOME/.config/fish/config.fish" ;;
-        *)    RC_FILE="\$HOME/.bashrc" ;;
+        zsh)  RC_FILE="$HOME/.zshrc" ;;
+        bash) RC_FILE="$HOME/.bashrc" ;;
+        fish) RC_FILE="$HOME/.config/fish/config.fish" ;;
+        ksh)  RC_FILE="$HOME/.kshrc" ;;
+        *)    RC_FILE="$HOME/.profile" ;;
     esac
-    printf "\n${YELLOW}⚠ ${INSTALL_DIR} is not in your PATH.${NC} Add it with:\n\n"
-    printf "  ${BOLD}echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ${RC_FILE}${NC}\n"
-    printf "  ${BOLD}source ${RC_FILE}${NC}\n"
+
+    # Check if ~/.local/bin is already in PATH or already in the RC file
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*) : ;;  # already in current PATH, nothing to do
+        *)
+            if [ "$SHELL_NAME" = "fish" ]; then
+                FISH_LINE="fish_add_path $HOME/.local/bin"
+                if ! grep -qF "fish_add_path" "$RC_FILE" 2>/dev/null; then
+                    mkdir -p "$(dirname "$RC_FILE")"
+                    printf '\n# Added by TuxBox installer\n' >> "$RC_FILE"
+                    printf '%s\n' "$FISH_LINE" >> "$RC_FILE"
+                    success "Added ~/.local/bin to PATH in $RC_FILE"
+                    PATH_ADDED=1
+                fi
+            else
+                if ! grep -qF '.local/bin' "$RC_FILE" 2>/dev/null; then
+                    printf '\n# Added by TuxBox installer\n' >> "$RC_FILE"
+                    # Intentional: write literal $HOME/$PATH to RC file (expands when user sources it)
+                    # shellcheck disable=SC2016
+                    printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC_FILE"
+                    success "Added ~/.local/bin to PATH in $RC_FILE"
+                    PATH_ADDED=1
+                fi
+            fi
+            ;;
+    esac
+fi
+
+if [ "$PATH_ADDED" -eq 1 ]; then
+    printf '\n'
+    warn "Reload your shell to activate PATH:"
+    printf '  %s\n' "${BOLD}source ${RC_FILE}${NC}"
+elif ! command -v "$BINARY" >/dev/null 2>&1; then
+    printf '\n'
+    warn "${INSTALL_DIR} is not in your PATH."
+    printf '  Add manually: %s\n' "${BOLD}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
 fi
 
 # ── Done ───────────────────────────────────────────────────────────────────────
 
-printf "\n${GREEN}${BOLD}TuxBox is ready!${NC}\n\n"
-printf "  ${BOLD}tbox init https://github.com/disoardi/tuxbox-registry${NC}\n"
-printf "  ${BOLD}tbox list${NC}\n"
-printf "  ${BOLD}tbox run <tool-name>${NC}\n\n"
+printf '\n%s\n\n' "${GREEN}${BOLD}TuxBox is ready!${NC}"
+printf '  %s\n' "${BOLD}tbox init https://github.com/disoardi/tuxbox-registry${NC}"
+printf '  %s\n' "${BOLD}tbox list${NC}"
+printf '  %s\n\n' "${BOLD}tbox run <tool-name>${NC}"
