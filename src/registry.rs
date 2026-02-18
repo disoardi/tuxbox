@@ -89,9 +89,17 @@ fn clone_registry(registry_config: &RegistryConfig, dest: &Path) -> Result<()> {
         AuthType::Ssh => RepoBuilder::new()
             .clone(&registry_config.url, dest)
             .context("git2 SSH clone failed"),
-        AuthType::Https => RepoBuilder::new()
-            .clone(&registry_config.url, dest)
-            .context("git2 HTTPS clone failed"),
+        AuthType::Https => {
+            let mut builder = RepoBuilder::new();
+            let mut fetch_options = git2::FetchOptions::new();
+            let mut proxy_opts = git2::ProxyOptions::new();
+            proxy_opts.auto();
+            fetch_options.proxy_options(proxy_opts);
+            builder.fetch_options(fetch_options);
+            builder
+                .clone(&registry_config.url, dest)
+                .context("git2 HTTPS clone failed")
+        }
     };
 
     // If git2 succeeds, we're done
@@ -137,8 +145,13 @@ fn update_registry(registry_dir: &Path) -> Result<()> {
     let mut remote = repo
         .find_remote("origin")
         .context("Failed to find remote 'origin'")?;
+    let mut fetch_options = git2::FetchOptions::new();
+    let mut proxy_opts = git2::ProxyOptions::new();
+    proxy_opts.auto();
+    fetch_options.proxy_options(proxy_opts);
+
     remote
-        .fetch(&["main"], None, None)
+        .fetch(&["main"], Some(&mut fetch_options), None)
         .context("Failed to fetch from remote")?;
 
     // Merge origin/main into current branch

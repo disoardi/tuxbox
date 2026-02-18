@@ -21,20 +21,27 @@ pub fn clone_tool(tool_name: &str, repo_url: &str, branch: Option<&str>) -> Resu
         return clone_with_system_git(repo_url, &tool_path, branch);
     }
 
-    // For HTTPS URLs, use git2
+    // For HTTPS URLs, try git2 with proxy auto-detection first
     let mut builder = git2::build::RepoBuilder::new();
+
+    // Auto-detect proxy from environment variables (http_proxy, https_proxy, etc.)
+    let mut fetch_options = git2::FetchOptions::new();
+    let mut proxy_opts = git2::ProxyOptions::new();
+    proxy_opts.auto();
+    fetch_options.proxy_options(proxy_opts);
+    builder.fetch_options(fetch_options);
 
     if let Some(branch_name) = branch {
         builder.branch(branch_name);
     }
 
-    builder
-        .clone(repo_url, &tool_path)
-        .map_err(|e| TuxBoxError::GitError(format!("Clone failed: {}", e)))?;
+    if builder.clone(repo_url, &tool_path).is_ok() {
+        println!("  ✓ Cloned successfully");
+        return Ok(());
+    }
 
-    println!("  ✓ Cloned successfully");
-
-    Ok(())
+    // Fallback: system git handles proxy env vars natively
+    clone_with_system_git(repo_url, &tool_path, branch)
 }
 
 /// Clone using system git command (for SSH URLs)
@@ -126,8 +133,17 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
         .find_remote("origin")
         .map_err(|e| TuxBoxError::GitError(format!("Remote 'origin' not found: {}", e)))?;
 
+    let mut fetch_options = git2::FetchOptions::new();
+    let mut proxy_opts = git2::ProxyOptions::new();
+    proxy_opts.auto();
+    fetch_options.proxy_options(proxy_opts);
+
     remote
-        .fetch(&["refs/heads/*:refs/remotes/origin/*"], None, None)
+        .fetch(
+            &["refs/heads/*:refs/remotes/origin/*"],
+            Some(&mut fetch_options),
+            None,
+        )
         .map_err(|e| TuxBoxError::GitError(format!("Fetch failed: {}", e)))?;
 
     // Get remote HEAD (assuming main/master branch)
