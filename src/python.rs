@@ -56,35 +56,40 @@ pub fn setup_venv(tool_path: &Path) -> Result<PathBuf> {
 
 /// Install dependencies in the venv (supports requirements.txt and pyproject.toml)
 pub fn install_requirements(venv_path: &Path, tool_path: &Path) -> Result<()> {
+    use std::fs;
+
     let requirements_path = tool_path.join("requirements.txt");
     let pyproject_path = tool_path.join("pyproject.toml");
 
     // Get pip executable from venv
     let pip = get_venv_executable(venv_path, "pip")?;
 
-    // Check for pyproject.toml first (modern approach)
+    // Use `pip install -e .` only for proper Python packages with a [build-system]
+    // section in pyproject.toml (PEP 517/518). Many tools use pyproject.toml only
+    // for configuration (linting, formatting) without being installable packages.
     if pyproject_path.exists() {
-        println!(
-            "  {} Installing Python package with dependencies...",
-            "→".cyan()
-        );
+        let content = fs::read_to_string(&pyproject_path).unwrap_or_default();
+        if content.contains("[build-system]") {
+            println!(
+                "  {} Installing Python package with dependencies...",
+                "→".cyan()
+            );
 
-        // Install in editable mode with dependencies
-        let status = Command::new(&pip)
-            .args(["install", "-e", "."])
-            .current_dir(tool_path)
-            .status()
-            .context("Failed to install package")?;
+            let status = Command::new(&pip)
+                .args(["install", "-e", "."])
+                .current_dir(tool_path)
+                .status()
+                .context("Failed to install package")?;
 
-        if !status.success() {
-            anyhow::bail!("Failed to install Python package");
+            if status.success() {
+                println!("  {} Package and dependencies installed", "✓".green());
+                return Ok(());
+            }
+            // Fall through to requirements.txt if pip install -e . fails
         }
-
-        println!("  {} Package and dependencies installed", "✓".green());
-        return Ok(());
     }
 
-    // Fallback to requirements.txt
+    // Use requirements.txt when present
     if requirements_path.exists() {
         println!("  {} Installing Python dependencies...", "→".cyan());
 
