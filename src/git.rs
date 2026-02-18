@@ -102,9 +102,13 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
     let repo = git2::Repository::open(&tool_path)
         .map_err(|e| TuxBoxError::GitError(format!("Failed to open repository: {}", e)))?;
 
-    // Check if working directory is clean
+    // Check if working directory is clean (tracked files only — excludes venv/, etc.)
+    let mut status_opts = git2::StatusOptions::new();
+    status_opts.include_untracked(false);
+    status_opts.include_ignored(false);
+
     let statuses = repo
-        .statuses(None)
+        .statuses(Some(&mut status_opts))
         .map_err(|e| TuxBoxError::GitError(format!("Failed to check repository status: {}", e)))?;
 
     if !statuses.is_empty() {
