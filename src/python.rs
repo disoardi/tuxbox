@@ -35,51 +35,120 @@ pub fn detect_python() -> Result<String> {
     )
 }
 
-/// Returns true if a Python >= 3.8 executable is available on the system.
-fn has_python38_or_newer() -> bool {
-    // detect_python() tries versioned names (python3.8 … python3.13) before python3/python.
-    // If it returns something other than the generic names, we have Python 3.8+.
-    detect_python()
-        .map(|p| p != "python3" && p != "python")
-        .unwrap_or(false)
+/// Find a Python executable meeting the minimum (major, minor) version requirement.
+///
+/// Search order:
+/// 1. Versioned names in PATH: python{major}.{13..min_minor}
+/// 2. pyenv installations in ~/.pyenv/versions/
+///
+/// Returns the path/name of the newest suitable Python found, or None.
+fn find_python_for_version(min_major: u32, min_minor: u32) -> Option<String> {
+    // Try versioned system Pythons from newest to minimum required
+    for minor in (min_minor..=13).rev() {
+        let candidate = format!("python{}.{}", min_major, minor);
+        if Command::new(&candidate).arg("--version").output().is_ok() {
+            return Some(candidate);
+        }
+    }
+
+    // Check pyenv versions directory (~/.pyenv/versions/<version>/bin/python)
+    let home = dirs::home_dir()?;
+    let pyenv_versions = home.join(".pyenv/versions");
+    if !pyenv_versions.exists() {
+        return None;
+    }
+
+    let mut best: Option<(u32, u32, PathBuf)> = None;
+    for entry in std::fs::read_dir(&pyenv_versions)
+        .ok()?
+        .filter_map(|e| e.ok())
+    {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let parts: Vec<u32> = name.split('.').filter_map(|p| p.parse().ok()).collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        let (major, minor) = (parts[0], parts[1]);
+        // Skip if below minimum
+        if major < min_major || (major == min_major && minor < min_minor) {
+            continue;
+        }
+        let python_bin = entry.path().join("bin/python");
+        if !python_bin.exists() {
+            continue;
+        }
+        // Keep the newest matching version
+        if best
+            .as_ref()
+            .map(|(bm, bn, _)| (major, minor) > (*bm, *bn))
+            .unwrap_or(true)
+        {
+            best = Some((major, minor, python_bin));
+        }
+    }
+
+    best.map(|(_, _, path)| path.to_string_lossy().to_string())
 }
 
 /// Create or verify virtual environment for a tool.
-/// Recreates the venv only when its Python is < 3.8 AND a newer Python is actually available.
-pub fn setup_venv(tool_path: &Path) -> Result<PathBuf> {
+///
+/// - `python_override`: use this specific Python binary to create the venv (e.g. from pyenv).
+///   When None, `detect_python()` is used.
+/// - `min_version`: the venv's Python must be >= this (major, minor). If the existing venv
+///   doesn't satisfy it and a better Python is available, the venv is recreated.
+pub fn setup_venv(
+    tool_path: &Path,
+    python_override: Option<&str>,
+    min_version: (u32, u32),
+) -> Result<PathBuf> {
     let venv_path = tool_path.join("venv");
+    let (min_major, min_minor) = min_version;
 
     if venv_path.exists() {
-        let venv_is_old = get_venv_executable(&venv_path, "python")
+        // Check if the existing venv Python meets the minimum version
+        let venv_ok = get_venv_executable(&venv_path, "python")
             .ok()
             .and_then(|py| {
                 Command::new(&py)
                     .args([
                         "-c",
-                        "import sys; exit(0 if sys.version_info >= (3, 8) else 1)",
+                        &format!(
+                            "import sys; exit(0 if sys.version_info >= ({min_major}, {min_minor}) else 1)"
+                        ),
                     ])
                     .output()
                     .ok()
             })
-            .map(|o| !o.status.success())
+            .map(|o| o.status.success())
             .unwrap_or(false);
 
-        if venv_is_old && has_python38_or_newer() {
-            // A better Python is available — recreate the venv to use it.
+        if venv_ok {
+            return Ok(venv_path);
+        }
+
+        // Venv doesn't meet the requirement; recreate only if a better Python is available
+        let has_better =
+            python_override.is_some() || find_python_for_version(min_major, min_minor).is_some();
+
+        if has_better {
             println!(
-                "  {} Existing venv uses Python < 3.8, recreating with newer Python...",
+                "  {} Existing venv uses Python < {min_major}.{min_minor}, recreating with newer Python...",
                 "→".yellow()
             );
             let _ = std::fs::remove_dir_all(&venv_path);
             // Fall through to creation below
         } else {
+            // No better Python available; keep the existing venv and try anyway
             return Ok(venv_path);
         }
     }
 
     println!("  {} Creating Python virtual environment...", "→".cyan());
 
-    let python = detect_python()?;
+    let python = match python_override {
+        Some(py) => py.to_string(),
+        None => detect_python()?,
+    };
 
     let status = Command::new(&python)
         .args(["-m", "venv", "venv"])
@@ -267,15 +336,42 @@ fn install_poetry_deps_fallback(pip: &Path, venv_path: &Path, tool_path: &Path) 
 pub fn run_in_venv(tool_config: &ToolConfig, tool_path: &Path, args: &[String]) -> Result<()> {
     println!("  {} Using local Python venv", "🐍".cyan());
 
-    // Setup venv
-    let venv_path = setup_venv(tool_path)?;
+    // Determine required Python version and find a suitable interpreter.
+    // When the tool specifies a minimum Python version, we search for it:
+    //   1. Versioned names in PATH (python3.11, python3.10, ...)
+    //   2. pyenv installations (~/.pyenv/versions/)
+    // If no suitable Python is found, we bail with installation instructions.
+    let (python_override, min_version) = if let Some(spec) = &tool_config.python_version {
+        if let Some((min_major, min_minor)) = min_required_python(spec) {
+            match find_python_for_version(min_major, min_minor) {
+                Some(py) => {
+                    println!("  {} Using Python: {}", "→".cyan(), py);
+                    (Some(py), (min_major, min_minor))
+                }
+                None => {
+                    anyhow::bail!(
+                        "This tool requires Python >={min_major}.{min_minor}, \
+                         but no compatible Python was found on this system.\n\n\
+                         Options to install Python {min_major}.{min_minor}+:\n\n\
+                         1. Package manager (RHEL/CentOS — requires root):\n\
+                            sudo yum install python3{min_minor}\n\n\
+                         2. pyenv — install any Python version without root:\n\
+                            curl https://pyenv.run | bash\n\
+                            # restart the shell, then:\n\
+                            pyenv install 3.{min_minor}\n\
+                            pyenv global 3.{min_minor}"
+                    );
+                }
+            }
+        } else {
+            (None, (3u32, 8u32))
+        }
+    } else {
+        (None, (3u32, 8u32))
+    };
 
-    // Warn if the venv Python does not meet the tool's version requirement.
-    // This is a soft warning — we still attempt to run in case the tool works
-    // anyway (e.g. older package versions are available).
-    if let Some(warn) = check_python_compatibility(tool_config, &venv_path) {
-        eprintln!("  {} {}", "⚠".yellow(), warn.yellow());
-    }
+    // Setup venv — uses python_override when specified, recreates if needed
+    let venv_path = setup_venv(tool_path, python_override.as_deref(), min_version)?;
 
     // Install requirements
     install_requirements(&venv_path, tool_path)?;
@@ -328,41 +424,6 @@ pub fn run_in_venv(tool_config: &ToolConfig, tool_path: &Path, args: &[String]) 
     }
 
     Ok(())
-}
-
-/// Check if the venv Python meets the tool's version requirement.
-/// Returns Some(error_message) if incompatible, None if OK or unknown.
-fn check_python_compatibility(tool_config: &ToolConfig, venv_path: &Path) -> Option<String> {
-    let spec = tool_config.python_version.as_deref()?;
-    let (req_major, req_minor) = min_required_python(spec)?;
-
-    let venv_python = get_venv_executable(venv_path, "python").ok()?;
-    let output = Command::new(&venv_python)
-        .args([
-            "-c",
-            "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}')",
-        ])
-        .output()
-        .ok()?;
-    let installed = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let parts: Vec<u32> = installed
-        .split('.')
-        .filter_map(|p| p.parse().ok())
-        .collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let (inst_major, inst_minor) = (parts[0], parts[1]);
-
-    if inst_major < req_major || (inst_major == req_major && inst_minor < req_minor) {
-        Some(format!(
-            "This tool requires Python {spec} (minimum {req_major}.{req_minor}), \
-             but the system only provides Python {installed}.\n  \
-             Install Python {req_major}.{req_minor}+ to use this tool."
-        ))
-    } else {
-        None
-    }
 }
 
 /// Parse the minimum Python version from a version specifier string.
@@ -422,5 +483,15 @@ mod tests {
         // Should find python3 or python
         let result = detect_python();
         assert!(result.is_ok() || result.is_err()); // Just verify it runs
+    }
+
+    #[test]
+    fn test_min_required_python() {
+        assert_eq!(min_required_python(">=3.8"), Some((3, 8)));
+        assert_eq!(min_required_python("^3.9"), Some((3, 9)));
+        assert_eq!(min_required_python("~3.8"), Some((3, 8)));
+        assert_eq!(min_required_python("3.8"), Some((3, 8)));
+        assert_eq!(min_required_python(">=3.8,<4.0"), Some((3, 8)));
+        assert_eq!(min_required_python(">=3.8,<3.10"), Some((3, 8)));
     }
 }
