@@ -391,24 +391,33 @@ pub fn run_in_venv(tool_config: &ToolConfig, tool_path: &Path, args: &[String]) 
         );
     };
 
-    // Build command - replace python/python3 with venv python
+    // Build command - handle three cases:
+    //   1. "python3 -m module" / "python script.py"  → use venv python, strip prefix
+    //   2. "cert-checker" / "my-script" (console script) → run venv/bin/<name> directly
+    //   3. anything else → run with venv python as-is
     let parts: Vec<&str> = run_command.split_whitespace().collect();
     if parts.is_empty() {
         return Err(TuxBoxError::ExecutionError("Empty run command".into()).into());
     }
 
-    let mut cmd = Command::new(&python);
-    cmd.current_dir(tool_path);
+    let is_python_prefix = parts[0] == "python" || parts[0] == "python3";
 
-    // Add command parts (skip first if it's "python" or "python3")
-    let start_idx = if parts[0] == "python" || parts[0] == "python3" {
-        1 // Skip the python command, we're using venv python
+    // Case 2: console script installed in venv/bin/
+    let venv_script = venv_path.join("bin").join(parts[0]);
+    let (mut cmd, extra_parts) = if !is_python_prefix && venv_script.exists() {
+        let mut c = Command::new(&venv_script);
+        c.current_dir(tool_path);
+        (c, &parts[1..])
     } else {
-        0
+        // Case 1 & 3: run via venv python
+        let mut c = Command::new(&python);
+        c.current_dir(tool_path);
+        let start_idx = if is_python_prefix { 1 } else { 0 };
+        (c, &parts[start_idx..])
     };
 
-    if parts.len() > start_idx {
-        cmd.args(&parts[start_idx..]);
+    if !extra_parts.is_empty() {
+        cmd.args(extra_parts);
     }
 
     // Add user arguments
