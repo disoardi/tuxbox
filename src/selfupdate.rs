@@ -112,13 +112,20 @@ fn install_update(release: &GithubRelease) -> Result<()> {
         asset_name.dimmed()
     );
 
-    // Find matching asset
+    // Find matching asset (.tar.gz only, skip .sha256)
+    let tarball_name = format!("{}.tar.gz", asset_name);
     let asset = release
         .assets
         .iter()
-        .find(|a| a.name.starts_with(&asset_name))
+        .find(|a| a.name == tarball_name)
         .ok_or_else(|| {
-            TuxBoxError::UpdateError(format!("No binary found for platform: {}", asset_name))
+            let available: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
+            TuxBoxError::UpdateError(format!(
+                "No binary found for platform: {}\nExpected asset: {}\nAvailable assets: {}",
+                asset_name,
+                tarball_name,
+                available.join(", ")
+            ))
         })?;
 
     println!("  {} Downloading: {}", "→".cyan(), asset.name.bold());
