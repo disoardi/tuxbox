@@ -112,8 +112,10 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
         .map_err(|e| TuxBoxError::GitError(format!("Failed to check repository status: {}", e)))?;
 
     if !statuses.is_empty() {
-        eprintln!("{}", "  ⚠ Warning: Tool has uncommitted changes".yellow());
-        eprintln!("  {} Update skipped to prevent data loss", "→".cyan());
+        eprintln!(
+            "{}",
+            format!("  ⚠ {} — has uncommitted changes, skipping", tool_name).yellow()
+        );
         eprintln!("  {} To force update, remove and reinstall:", "→".cyan());
         eprintln!(
             "    {}",
@@ -155,17 +157,25 @@ fn update_tool_system_git(tool_name: &str, tool_path: &std::path::Path) -> Resul
             .map(|c| c.id())
     });
 
-    let status = Command::new("git")
+    let output = Command::new("git")
         .args(["pull", "--ff-only"])
         .current_dir(tool_path)
-        .status()
+        .output()
         .map_err(|e| TuxBoxError::GitError(format!("Failed to execute git pull: {}", e)))?;
 
-    if !status.success() {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         eprintln!(
             "{}",
-            "  ✗ Update failed (non-fast-forward or conflict)".red()
+            format!(
+                "  ✗ {} — update failed (non-fast-forward or conflict)",
+                tool_name
+            )
+            .red()
         );
+        if !stderr.trim().is_empty() {
+            eprintln!("  {} {}", "→".cyan(), stderr.trim());
+        }
         eprintln!("  {} To force clean reinstall:", "→".cyan());
         eprintln!(
             "    {}",
@@ -184,10 +194,14 @@ fn update_tool_system_git(tool_name: &str, tool_path: &std::path::Path) -> Resul
     });
 
     if before_oid != after_oid {
-        println!("  {} Updated {}", "✓".green(), tool_name);
+        println!("  {} {} — updated", "✓".green(), tool_name.bold());
         crate::tool_state::ToolState::invalidate(tool_path);
     } else {
-        println!("  {} Already up to date", "✓".green());
+        println!(
+            "  {} {} — already up to date",
+            "✓".green(),
+            tool_name.bold()
+        );
     }
 
     Ok(())
@@ -244,7 +258,11 @@ fn update_tool_git2(
     let remote_oid = remote_commit.id();
 
     if current_oid == remote_oid {
-        println!("  {} Already up to date", "✓".green());
+        println!(
+            "  {} {} — already up to date",
+            "✓".green(),
+            tool_name.bold()
+        );
         return Ok(());
     }
 
@@ -254,8 +272,9 @@ fn update_tool_git2(
 
     if behind == 0 {
         println!(
-            "  {} Local is ahead of remote (no update needed)",
-            "✓".green()
+            "  {} {} — local is ahead of remote",
+            "✓".green(),
+            tool_name.bold()
         );
         return Ok(());
     }
@@ -270,9 +289,9 @@ fn update_tool_git2(
             repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))
                 .map_err(|e| TuxBoxError::GitError(format!("Failed to checkout HEAD: {}", e)))?;
             println!(
-                "  {} Updated {} ({} {} behind)",
+                "  {} {} — updated ({} {} behind)",
                 "✓".green(),
-                tool_name,
+                tool_name.bold(),
                 behind,
                 if behind == 1 { "commit" } else { "commits" }
             );
@@ -281,7 +300,11 @@ fn update_tool_git2(
         Err(e) => {
             eprintln!(
                 "{}",
-                "  ✗ Update failed: merge conflict or non-fast-forward".red()
+                format!(
+                    "  ✗ {} — update failed (merge conflict or non-fast-forward)",
+                    tool_name
+                )
+                .red()
             );
             eprintln!("  {} Error: {}", "→".cyan(), e);
             eprintln!("  {} To force clean reinstall:", "→".cyan());
