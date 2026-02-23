@@ -98,27 +98,29 @@ fn find_python_for_version(min_major: u32, min_minor: u32) -> Option<String> {
 ///   or None if the system default is fine.
 /// - `min_version`: minimum (major, minor) the venv must satisfy.
 fn resolve_python(tool_config: &ToolConfig) -> Result<(Option<String>, (u32, u32))> {
-    if let Some(spec) = &tool_config.python_version {
-        if let Some((min_major, min_minor)) = min_required_python(spec) {
-            match find_python_for_version(min_major, min_minor) {
-                Some(py) => {
-                    println!("  {} Using Python: {}", "→".cyan(), py);
-                    return Ok((Some(py), (min_major, min_minor)));
-                }
-                None => {
-                    anyhow::bail!(
-                        "This tool requires Python >={min_major}.{min_minor}, \
-                         but no compatible Python was found on this system.\n\n\
-                         Options to install Python {min_major}.{min_minor}+:\n\n\
-                         1. Package manager (RHEL/CentOS — requires root):\n\
-                            sudo yum install python3{min_minor}\n\n\
-                         2. pyenv — install any Python version without root:\n\
-                            curl https://pyenv.run | bash\n\
-                            # restart the shell, then:\n\
-                            pyenv install 3.{min_minor}\n\
-                            pyenv global 3.{min_minor}"
-                    );
-                }
+    if let Some((min_major, min_minor)) = tool_config
+        .python_version
+        .as_deref()
+        .and_then(min_required_python)
+    {
+        match find_python_for_version(min_major, min_minor) {
+            Some(py) => {
+                println!("  {} Using Python: {}", "→".cyan(), py);
+                return Ok((Some(py), (min_major, min_minor)));
+            }
+            None => {
+                anyhow::bail!(
+                    "This tool requires Python >={min_major}.{min_minor}, \
+                     but no compatible Python was found on this system.\n\n\
+                     Options to install Python {min_major}.{min_minor}+:\n\n\
+                     1. Package manager (RHEL/CentOS — requires root):\n\
+                        sudo yum install python3{min_minor}\n\n\
+                     2. pyenv — install any Python version without root:\n\
+                        curl https://pyenv.run | bash\n\
+                        # restart the shell, then:\n\
+                        pyenv install 3.{min_minor}\n\
+                        pyenv global 3.{min_minor}"
+                );
             }
         }
     }
@@ -310,10 +312,10 @@ fn install_poetry_deps_fallback(pip: &Path, venv_path: &Path, tool_path: &Path) 
             if k.to_lowercase() == "python" {
                 return false;
             }
-            if let Some(t) = v.as_table() {
-                if t.contains_key("git") || t.contains_key("path") || t.contains_key("url") {
-                    return false;
-                }
+            if v.as_table().is_some_and(|t| {
+                t.contains_key("git") || t.contains_key("path") || t.contains_key("url")
+            }) {
+                return false;
             }
             true
         })

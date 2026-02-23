@@ -65,10 +65,8 @@ impl ToolState {
         let state: ToolState = toml::from_str(&content).ok()?;
 
         // Validate: venv directory must still exist
-        if let Some(ref venv) = state.venv {
-            if !venv.path.exists() {
-                return None;
-            }
+        if state.venv.as_ref().is_some_and(|venv| !venv.path.exists()) {
+            return None;
         }
 
         Some(state)
