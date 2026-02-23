@@ -123,16 +123,92 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Get current HEAD
+    // Detect remote URL to choose fetch strategy (before moving repo)
+    let remote_url = repo
+        .find_remote("origin")
+        .ok()
+        .and_then(|r| r.url().map(|u| u.to_string()))
+        .unwrap_or_default();
+
+    let is_ssh = remote_url.starts_with("git@") || remote_url.starts_with("ssh://");
+
+    // Drop statuses (borrow of repo) before consuming repo
+    drop(statuses);
+
+    if is_ssh {
+        update_tool_system_git(tool_name, &tool_path)
+    } else {
+        update_tool_git2(tool_name, &tool_path, repo)
+    }
+}
+
+/// Update a tool via system `git pull --ff-only` (used for SSH remotes)
+fn update_tool_system_git(tool_name: &str, tool_path: &std::path::Path) -> Result<()> {
+    use colored::Colorize;
+    use std::process::Command;
+
+    // Record HEAD before pull to detect whether it advanced
+    let before_oid = git2::Repository::open(tool_path).ok().and_then(|r| {
+        r.head()
+            .ok()
+            .and_then(|h| h.peel_to_commit().ok())
+            .map(|c| c.id())
+    });
+
+    let status = Command::new("git")
+        .args(["pull", "--ff-only"])
+        .current_dir(tool_path)
+        .status()
+        .map_err(|e| TuxBoxError::GitError(format!("Failed to execute git pull: {}", e)))?;
+
+    if !status.success() {
+        eprintln!(
+            "{}",
+            "  ✗ Update failed (non-fast-forward or conflict)".red()
+        );
+        eprintln!("  {} To force clean reinstall:", "→".cyan());
+        eprintln!(
+            "    {}",
+            format!("rm -rf {}", tool_path.display()).bright_black()
+        );
+        eprintln!("    {}", format!("tbox run {}", tool_name).bright_black());
+        return Err(TuxBoxError::GitError(format!("git pull failed for '{}'", tool_name)).into());
+    }
+
+    // Check if HEAD advanced
+    let after_oid = git2::Repository::open(tool_path).ok().and_then(|r| {
+        r.head()
+            .ok()
+            .and_then(|h| h.peel_to_commit().ok())
+            .map(|c| c.id())
+    });
+
+    if before_oid != after_oid {
+        println!("  {} Updated {}", "✓".green(), tool_name);
+        crate::tool_state::ToolState::invalidate(tool_path);
+    } else {
+        println!("  {} Already up to date", "✓".green());
+    }
+
+    Ok(())
+}
+
+/// Update a tool via git2 fetch + fast-forward (used for HTTPS remotes)
+fn update_tool_git2(
+    tool_name: &str,
+    tool_path: &std::path::Path,
+    repo: git2::Repository,
+) -> Result<()> {
+    use colored::Colorize;
+
     let head = repo
         .head()
         .map_err(|e| TuxBoxError::GitError(format!("Failed to get HEAD reference: {}", e)))?;
-    let current_commit = head
+    let current_oid = head
         .peel_to_commit()
-        .map_err(|e| TuxBoxError::GitError(format!("Failed to get current commit: {}", e)))?;
-    let current_oid = current_commit.id();
+        .map_err(|e| TuxBoxError::GitError(format!("Failed to get current commit: {}", e)))?
+        .id();
 
-    // Fetch from remote
     let mut remote = repo
         .find_remote("origin")
         .map_err(|e| TuxBoxError::GitError(format!("Remote 'origin' not found: {}", e)))?;
@@ -150,7 +226,6 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
         )
         .map_err(|e| TuxBoxError::GitError(format!("Fetch failed: {}", e)))?;
 
-    // Get remote HEAD (assuming main/master branch)
     let branch_name = head
         .shorthand()
         .ok_or_else(|| TuxBoxError::GitError("Failed to get branch name".to_string()))?;
@@ -168,13 +243,11 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
         .map_err(|e| TuxBoxError::GitError(format!("Failed to get remote commit: {}", e)))?;
     let remote_oid = remote_commit.id();
 
-    // Check if already up to date
     if current_oid == remote_oid {
         println!("  {} Already up to date", "✓".green());
         return Ok(());
     }
 
-    // Count commits difference
     let (_ahead, behind) = repo
         .graph_ahead_behind(current_oid, remote_oid)
         .map_err(|e| TuxBoxError::GitError(format!("Failed to compare commits: {}", e)))?;
@@ -187,22 +260,15 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Attempt fast-forward merge
-    let fetch_commit = remote_commit;
     let refname = format!("refs/heads/{}", branch_name);
     let mut reference = repo.find_reference(&refname).map_err(|e| {
         TuxBoxError::GitError(format!("Failed to find reference '{}': {}", refname, e))
     })?;
 
-    // Try fast-forward
-    let ff_result = reference.set_target(fetch_commit.id(), "Fast-forward merge");
-
-    match ff_result {
+    match reference.set_target(remote_commit.id(), "Fast-forward merge") {
         Ok(_) => {
-            // Update working directory
             repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))
                 .map_err(|e| TuxBoxError::GitError(format!("Failed to checkout HEAD: {}", e)))?;
-
             println!(
                 "  {} Updated {} ({} {} behind)",
                 "✓".green(),
@@ -210,9 +276,7 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
                 behind,
                 if behind == 1 { "commit" } else { "commits" }
             );
-            // Invalidate tool state so the next `tbox run` re-installs dependencies
-            // against the updated source.
-            crate::tool_state::ToolState::invalidate(&tool_path);
+            crate::tool_state::ToolState::invalidate(tool_path);
         }
         Err(e) => {
             eprintln!(
