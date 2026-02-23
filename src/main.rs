@@ -76,9 +76,26 @@ fn main() -> Result<()> {
                 println!("{} Adding registry '{}'...", "→".cyan(), name.bold());
                 config::add_registry(&name, &url, priority)?;
             }
-            cli::RegistryAction::Remove { name } => {
+            cli::RegistryAction::Remove { name, keep_cache } => {
                 println!("{} Removing registry '{}'...", "→".cyan(), name.bold());
-                config::remove_registry(&name)?;
+                config::remove_registry(&name, keep_cache)?;
+            }
+            cli::RegistryAction::Rename { old_name, new_name } => {
+                println!(
+                    "{} Renaming registry '{}' → '{}'...",
+                    "→".cyan(),
+                    old_name.bold(),
+                    new_name.bold()
+                );
+                config::rename_registry(&old_name, &new_name)?;
+            }
+            cli::RegistryAction::SetPriority { name, priority } => {
+                println!(
+                    "{} Setting priority for registry '{}'...",
+                    "→".cyan(),
+                    name.bold()
+                );
+                config::set_registry_priority(&name, priority)?;
             }
             cli::RegistryAction::Sync => {
                 println!("{} Syncing all registries...", "→".cyan());

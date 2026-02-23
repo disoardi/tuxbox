@@ -413,8 +413,8 @@ pub fn add_registry(name: &str, url: &str, priority: Option<u32>) -> Result<()> 
     Ok(())
 }
 
-/// Remove a registry from configuration
-pub fn remove_registry(name: &str) -> Result<()> {
+/// Remove a registry from configuration and optionally delete its local cache
+pub fn remove_registry(name: &str, keep_cache: bool) -> Result<()> {
     use colored::Colorize;
 
     let mut config = load_config()?;
@@ -430,10 +430,114 @@ pub fn remove_registry(name: &str) -> Result<()> {
     let config_toml = toml::to_string_pretty(&config)?;
     fs::write(config_file()?, config_toml)?;
 
+    // Remove local registry cache directory (unless --keep-cache)
+    if !keep_cache {
+        let local_dir = registry_dir()?.join(name);
+        if local_dir.exists() {
+            fs::remove_dir_all(&local_dir).with_context(|| {
+                format!("Failed to remove registry cache at {}", local_dir.display())
+            })?;
+            println!(
+                "{} Local cache removed: {}",
+                "✓".green(),
+                local_dir.display().to_string().dimmed()
+            );
+        }
+    }
+
     println!(
         "{} Registry '{}' removed successfully!",
         "✓".green(),
         name.yellow()
+    );
+    Ok(())
+}
+
+/// Rename a registry: updates config and moves local cache directory
+pub fn rename_registry(old_name: &str, new_name: &str) -> Result<()> {
+    use colored::Colorize;
+
+    let mut config = load_config()?;
+
+    // Check new name is not already taken
+    if config.registries.iter().any(|r| r.name == new_name) {
+        anyhow::bail!(
+            "A registry named '{}' already exists. Choose a different name.",
+            new_name
+        );
+    }
+
+    // Find and rename in config
+    let registry = config
+        .registries
+        .iter_mut()
+        .find(|r| r.name == old_name)
+        .ok_or_else(|| anyhow::anyhow!("Registry '{}' not found", old_name))?;
+
+    registry.name = new_name.to_string();
+
+    // Save config
+    let config_toml = toml::to_string_pretty(&config)?;
+    fs::write(config_file()?, config_toml)?;
+
+    // Move local cache directory if it exists
+    let old_dir = registry_dir()?.join(old_name);
+    let new_dir = registry_dir()?.join(new_name);
+    if old_dir.exists() {
+        fs::rename(&old_dir, &new_dir).with_context(|| {
+            format!(
+                "Failed to move cache from {} to {}",
+                old_dir.display(),
+                new_dir.display()
+            )
+        })?;
+        println!(
+            "{} Cache moved: {} → {}",
+            "✓".green(),
+            old_dir.display().to_string().dimmed(),
+            new_dir.display().to_string().dimmed()
+        );
+    }
+
+    println!(
+        "{} Registry renamed: {} → {}",
+        "✓".green(),
+        old_name.yellow(),
+        new_name.cyan().bold()
+    );
+    Ok(())
+}
+
+/// Change the priority of a registry and re-sort
+pub fn set_registry_priority(name: &str, priority: u32) -> Result<()> {
+    use colored::Colorize;
+
+    let mut config = load_config()?;
+
+    let registry = config
+        .registries
+        .iter_mut()
+        .find(|r| r.name == name)
+        .ok_or_else(|| anyhow::anyhow!("Registry '{}' not found", name))?;
+
+    let old_priority = registry.priority;
+    registry.priority = priority;
+
+    // Re-sort by priority (higher first)
+    config
+        .registries
+        .sort_by(|a, b| b.priority.cmp(&a.priority));
+
+    // Save config
+    let config_toml = toml::to_string_pretty(&config)?;
+    fs::write(config_file()?, config_toml)?;
+
+    println!(
+        "{} Registry '{}' priority: {} → {}",
+        "✓".green(),
+        name.cyan().bold(),
+        old_priority.to_string().dimmed(),
+        priority.to_string().yellow()
     );
     Ok(())
 }

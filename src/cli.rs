@@ -76,10 +76,32 @@ pub enum RegistryAction {
         priority: Option<u32>,
     },
 
-    /// Remove a registry
+    /// Remove a registry (also deletes local cache unless --keep-cache)
     Remove {
         /// Name of the registry to remove
         name: String,
+
+        /// Keep local cache directory (do not delete ~/.tuxbox/registry/<name>)
+        #[arg(long)]
+        keep_cache: bool,
+    },
+
+    /// Rename a registry (updates config and moves local cache)
+    Rename {
+        /// Current name of the registry
+        old_name: String,
+
+        /// New name for the registry
+        new_name: String,
+    },
+
+    /// Change the priority of a registry (higher = checked first)
+    SetPriority {
+        /// Name of the registry
+        name: String,
+
+        /// New priority value
+        priority: u32,
     },
 
     /// Sync (clone/update) all registries
