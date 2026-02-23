@@ -60,7 +60,7 @@ pub fn sync_registry(
             "→".cyan(),
             registry_config.name
         );
-        update_registry(&registry_dir)?;
+        update_registry(registry_config, &registry_dir)?;
     } else {
         // Clone registry
         println!(
@@ -74,74 +74,113 @@ pub fn sync_registry(
     Ok(registry_dir)
 }
 
-/// Clone a registry repository
-fn clone_registry(registry_config: &RegistryConfig, dest: &Path) -> Result<()> {
-    use git2::build::RepoBuilder;
+/// Run `git pull` via system git in the given directory
+fn system_git_pull(dir: &Path) -> Result<()> {
     use std::process::Command;
 
+    let status = Command::new("git")
+        .args(["pull", "--ff-only"])
+        .current_dir(dir)
+        .status()
+        .context("Failed to execute git pull")?;
+
+    if !status.success() {
+        anyhow::bail!("git pull failed in {}", dir.display());
+    }
+    Ok(())
+}
+
+/// Run `git clone` via system git
+fn system_git_clone(url: &str, dest: &Path) -> Result<()> {
+    use std::process::Command;
+
+    let status = Command::new("git")
+        .args(["clone", url, dest.to_str().unwrap()])
+        .status()
+        .context("Failed to execute git clone")?;
+
+    if !status.success() {
+        anyhow::bail!(
+            "git clone failed.\nURL: {}\nEnsure SSH keys are configured for SSH URLs.",
+            url
+        );
+    }
+    Ok(())
+}
+
+/// Clone a registry repository
+fn clone_registry(registry_config: &RegistryConfig, dest: &Path) -> Result<()> {
     // Ensure parent directory exists
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).context("Failed to create registry directory")?;
     }
 
-    // Try git2 first (native Rust implementation)
-    let git2_result = match registry_config.auth_type {
-        AuthType::Ssh => RepoBuilder::new()
-            .clone(&registry_config.url, dest)
-            .context("git2 SSH clone failed"),
+    match registry_config.auth_type {
+        AuthType::Ssh => {
+            // SSH: always use system git — git2 has no SSH key callbacks
+            system_git_clone(&registry_config.url, dest)?;
+            println!("  {} Registry cloned successfully", "✓".green());
+        }
         AuthType::Https => {
+            // HTTPS: try git2 first (respects proxy settings), fall back to system git
+            use git2::build::RepoBuilder;
+
             let mut builder = RepoBuilder::new();
             let mut fetch_options = git2::FetchOptions::new();
             let mut proxy_opts = git2::ProxyOptions::new();
             proxy_opts.auto();
             fetch_options.proxy_options(proxy_opts);
             builder.fetch_options(fetch_options);
-            builder
-                .clone(&registry_config.url, dest)
-                .context("git2 HTTPS clone failed")
+
+            if builder.clone(&registry_config.url, dest).is_ok() {
+                println!("  {} Registry cloned successfully", "✓".green());
+            } else {
+                println!(
+                    "  {} git2 failed, trying system git command...",
+                    "→".yellow()
+                );
+                system_git_clone(&registry_config.url, dest)?;
+                println!(
+                    "  {} Registry cloned successfully (via git command)",
+                    "✓".green()
+                );
+            }
         }
-    };
-
-    // If git2 succeeds, we're done
-    if git2_result.is_ok() {
-        println!("  {} Registry cloned successfully", "✓".green());
-        return Ok(());
     }
 
-    // Fallback: use system git command (works better with SSH configs)
-    println!(
-        "  {} git2 failed, trying system git command...",
-        "→".yellow()
-    );
-
-    let status = Command::new("git")
-        .args(["clone", &registry_config.url, dest.to_str().unwrap()])
-        .status()
-        .context("Failed to execute git command")?;
-
-    if !status.success() {
-        anyhow::bail!(
-            "Failed to clone registry. Both git2 and system git failed.\n\
-             URL: {}\n\
-             Ensure SSH keys are configured for SSH URLs.",
-            registry_config.url
-        );
-    }
-
-    println!(
-        "  {} Registry cloned successfully (via git command)",
-        "✓".green()
-    );
     Ok(())
 }
 
 /// Update a registry repository (git pull)
-fn update_registry(registry_dir: &Path) -> Result<()> {
+fn update_registry(registry_config: &RegistryConfig, registry_dir: &Path) -> Result<()> {
+    match registry_config.auth_type {
+        AuthType::Ssh => {
+            // SSH: always use system git — git2 fetch has no SSH key callbacks
+            system_git_pull(registry_dir)?;
+            println!("  {} Registry updated successfully", "✓".green());
+        }
+        AuthType::Https => {
+            // HTTPS: try git2 first (respects proxy), fall back to system git
+            if update_registry_git2(registry_dir).is_err() {
+                println!("  {} git2 failed, trying system git pull...", "→".yellow());
+                system_git_pull(registry_dir)?;
+                println!(
+                    "  {} Registry updated successfully (via git command)",
+                    "✓".green()
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Update registry via git2 (HTTPS only — no SSH support)
+fn update_registry_git2(registry_dir: &Path) -> Result<()> {
     use git2::Repository;
 
     let repo = Repository::open(registry_dir).context("Failed to open registry repository")?;
 
-    // Fetch from origin
     let mut remote = repo
         .find_remote("origin")
         .context("Failed to find remote 'origin'")?;
@@ -152,18 +191,15 @@ fn update_registry(registry_dir: &Path) -> Result<()> {
 
     remote
         .fetch(&["main"], Some(&mut fetch_options), None)
-        .context("Failed to fetch from remote")?;
+        .context("Fetch failed")?;
 
-    // Merge origin/main into current branch
     let fetch_head = repo.find_reference("FETCH_HEAD")?;
     let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
-
     let analysis = repo.merge_analysis(&[&fetch_commit])?;
 
     if analysis.0.is_up_to_date() {
         println!("  {} Registry already up to date", "✓".green());
     } else if analysis.0.is_fast_forward() {
-        // Fast-forward merge
         let refname = "refs/heads/main";
         let mut reference = repo.find_reference(refname)?;
         reference.set_target(fetch_commit.id(), "Fast-forward merge")?;
