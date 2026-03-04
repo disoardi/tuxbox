@@ -335,16 +335,54 @@ pub fn show_status() -> Result<()> {
 
     // Installed tools
     if tools_dir.exists() {
-        let entries: Vec<_> = fs::read_dir(&tools_dir)?
+        let mut entries: Vec<_> = fs::read_dir(&tools_dir)?
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().ok().map(|t| t.is_dir()).unwrap_or(false))
             .collect();
+        entries.sort_by_key(|e| e.file_name());
 
         if !entries.is_empty() {
             println!("\n{} {} installed tools:", "Tools:".bold(), entries.len());
             for entry in entries {
+                let tool_path = entry.path();
                 let tool_name = entry.file_name().to_string_lossy().to_string();
-                println!("  {} {}", "•".cyan(), tool_name.bold());
+
+                // Native tools: read version from .tuxbox-native-version file
+                let native_version = fs::read_to_string(tool_path.join(".tuxbox-native-version"))
+                    .map(|s| s.trim().to_string())
+                    .ok();
+
+                let (version, branch) = if let Some(v) = native_version {
+                    (v, "native".to_string())
+                } else {
+                    // git describe --tags --always → "v1.3.3" or short hash
+                    let v = std::process::Command::new("git")
+                        .args(["describe", "--tags", "--always"])
+                        .current_dir(&tool_path)
+                        .output()
+                        .ok()
+                        .filter(|o| o.status.success())
+                        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
+                    // git rev-parse --abbrev-ref HEAD → branch name
+                    let b = std::process::Command::new("git")
+                        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                        .current_dir(&tool_path)
+                        .output()
+                        .ok()
+                        .filter(|o| o.status.success())
+                        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                        .unwrap_or_else(|| "?".to_string());
+                    (v, b)
+                };
+
+                println!(
+                    "  {} {}  {}  {}",
+                    "•".cyan(),
+                    tool_name.bold(),
+                    version.green(),
+                    format!("({})", branch).dimmed()
+                );
             }
         } else {
             println!(

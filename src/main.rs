@@ -19,6 +19,7 @@ mod docker;
 mod environment;
 mod error;
 mod git;
+mod native;
 mod python;
 mod registry;
 mod runner;

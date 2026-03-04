@@ -6,7 +6,7 @@ use colored::Colorize;
 use crate::config::ToolConfig;
 use crate::environment::{ExecutionEnvironment, detect_environment};
 use crate::error::TuxBoxError;
-use crate::{docker, git, python};
+use crate::{docker, git, native, python};
 
 /// Run a tool (clone if needed, then execute)
 ///
@@ -17,6 +17,11 @@ use crate::{docker, git, python};
 pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
     // Get tool configuration
     let tool_config = get_tool_config(tool_name)?;
+
+    // Native binaries: download from GitHub releases, no git clone needed
+    if tool_config.tool_type.as_deref() == Some("native") {
+        return native::run_native_tool(&tool_config, args);
+    }
 
     // Clone if not present
     if !git::is_tool_cloned(tool_name)? {

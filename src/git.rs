@@ -99,6 +99,11 @@ pub fn update_tool(tool_name: &str) -> Result<()> {
         return Err(TuxBoxError::ToolNotFound(tool_name.to_string()).into());
     }
 
+    // Native tools (pre-built binaries) have no git repo — delegate to native module
+    if crate::native::is_native_tool_dir(&tool_path) {
+        return crate::native::update_native_tool(tool_name);
+    }
+
     let repo = git2::Repository::open(&tool_path)
         .map_err(|e| TuxBoxError::GitError(format!("Failed to open repository: {}", e)))?;
 
