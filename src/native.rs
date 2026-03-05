@@ -29,6 +29,9 @@ pub fn run_native_tool(tool_config: &ToolConfig, args: &[String]) -> Result<()> 
             tool_config.name.bold()
         );
         download_binary(tool_config, &tool_dir, &binary_path)?;
+    } else {
+        // Ensure execute bit is set (may be missing if a previous download was interrupted)
+        ensure_executable(&binary_path)?;
     }
 
     run_binary(&binary_path, args)
@@ -152,6 +155,21 @@ fn download_binary(tool_config: &ToolConfig, tool_dir: &Path, binary_path: &Path
         asset_name.bold(),
         release.tag_name.green()
     );
+    Ok(())
+}
+
+fn ensure_executable(binary_path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let meta = fs::metadata(binary_path)?;
+        let mode = meta.permissions().mode();
+        if mode & 0o111 == 0 {
+            let mut perms = meta.permissions();
+            perms.set_mode(mode | 0o755);
+            fs::set_permissions(binary_path, perms)?;
+        }
+    }
     Ok(())
 }
 
