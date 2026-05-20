@@ -67,6 +67,78 @@ pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Delete a tool installation completely (with confirmation)
+pub fn delete_tool(tool_name: &str) -> Result<()> {
+    let tool_path = git::tool_path(tool_name)?;
+
+    if !tool_path.exists() {
+        return Err(TuxBoxError::ToolNotFound(format!(
+            "'{}' non è installato (directory non trovata)",
+            tool_name
+        ))
+        .into());
+    }
+
+    println!(
+        "  {} Verranno rimossi: {}",
+        "⚠".yellow(),
+        tool_path.display().to_string().bold()
+    );
+    print!("  Confermi? [y/N] ");
+    use std::io::Write;
+    std::io::stdout().flush()?;
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+
+    if input.trim().to_lowercase() != "y" {
+        println!("  {} Operazione annullata.", "✗".red());
+        return Ok(());
+    }
+
+    std::fs::remove_dir_all(&tool_path)?;
+    println!("  {} Tool '{}' rimosso.", "✓".green(), tool_name.bold());
+    Ok(())
+}
+
+/// Remove a tool installation and re-setup from scratch (with confirmation)
+pub fn reinstall_tool(tool_name: &str) -> Result<()> {
+    let tool_path = git::tool_path(tool_name)?;
+
+    if !tool_path.exists() {
+        return Err(TuxBoxError::ToolNotFound(format!(
+            "'{}' non è installato (directory non trovata)",
+            tool_name
+        ))
+        .into());
+    }
+
+    println!(
+        "  {} Verranno rimossi e reinstallati: {}",
+        "⚠".yellow(),
+        tool_path.display().to_string().bold()
+    );
+    print!("  Confermi? [y/N] ");
+    use std::io::Write;
+    std::io::stdout().flush()?;
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+
+    if input.trim().to_lowercase() != "y" {
+        println!("  {} Operazione annullata.", "✗".red());
+        return Ok(());
+    }
+
+    std::fs::remove_dir_all(&tool_path)?;
+    println!(
+        "  {} Installazione rimossa. Re-setup in corso...",
+        "→".cyan()
+    );
+
+    run_tool(tool_name, &[])
+}
+
 /// Get tool configuration from registry or fallback to hardcoded
 ///
 /// Phase 2: Load from multi-registry with priority-based resolution

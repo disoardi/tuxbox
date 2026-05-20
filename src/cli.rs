@@ -47,6 +47,18 @@ pub enum Commands {
         action: RegistryAction,
     },
 
+    /// Remove a tool installation and re-setup from scratch
+    Reinstall {
+        /// Name of the tool to reinstall
+        tool: String,
+    },
+
+    /// Remove a tool installation completely
+    Delete {
+        /// Name of the tool to delete
+        tool: String,
+    },
+
     /// Check for updates and optionally install them
     SelfUpdate {
         /// Automatically install the update without prompting

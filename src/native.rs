@@ -274,6 +274,7 @@ struct GithubAsset {
 }
 
 /// Return the tool directory path if the native tool is installed, or None
+#[allow(dead_code)]
 pub fn native_tool_dir(tool_name: &str) -> Result<Option<PathBuf>> {
     let dir = tools_dir()?.join(tool_name);
     if dir.join(VERSION_FILE).exists() {

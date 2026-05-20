@@ -103,6 +103,12 @@ fn main() -> Result<()> {
                 registry::sync_all_registries()?;
             }
         },
+        cli::Commands::Reinstall { tool } => {
+            runner::reinstall_tool(&tool)?;
+        }
+        cli::Commands::Delete { tool } => {
+            runner::delete_tool(&tool)?;
+        }
         cli::Commands::SelfUpdate { install } => {
             selfupdate::check_for_update(install)?;
         }
