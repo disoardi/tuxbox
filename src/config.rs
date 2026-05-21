@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::fs;
 use std::path::PathBuf;
 
@@ -132,9 +133,7 @@ pub fn init_config(registry_url: &str) -> Result<()> {
     }
 
     // Sort by priority (higher priority first)
-    config
-        .registries
-        .sort_by(|a, b| b.priority.cmp(&a.priority));
+    config.registries.sort_by_key(|r| Reverse(r.priority));
 
     // Write config
     let config_toml = toml::to_string_pretty(&config)?;
@@ -435,9 +434,7 @@ pub fn add_registry(name: &str, url: &str, priority: Option<u32>) -> Result<()> 
     });
 
     // Sort by priority
-    config
-        .registries
-        .sort_by(|a, b| b.priority.cmp(&a.priority));
+    config.registries.sort_by_key(|r| Reverse(r.priority));
 
     // Save config
     let config_toml = toml::to_string_pretty(&config)?;
@@ -562,9 +559,7 @@ pub fn set_registry_priority(name: &str, priority: u32) -> Result<()> {
     registry.priority = priority;
 
     // Re-sort by priority (higher first)
-    config
-        .registries
-        .sort_by(|a, b| b.priority.cmp(&a.priority));
+    config.registries.sort_by_key(|r| Reverse(r.priority));
 
     // Save config
     let config_toml = toml::to_string_pretty(&config)?;
