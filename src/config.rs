@@ -78,6 +78,8 @@ pub struct ToolConfig {
     pub commands: Option<Commands>,
     /// Minimum Python version requirement from registry (e.g. ">=3.8", "^3.9")
     pub python_version: Option<String>,
+    /// System packages to install in the auto-generated Docker image (apt-get)
+    pub system_deps: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -22,7 +22,12 @@ pub fn run_in_docker(tool_config: &ToolConfig, tool_path: &Path, args: &[String]
 
     // Check if we need to build the image
     if !image_exists(&image_name)? {
-        build_image(&image_name, tool_path, python_version)?;
+        build_image(
+            &image_name,
+            tool_path,
+            python_version,
+            tool_config.system_deps.as_deref(),
+        )?;
     }
 
     // Run the tool in the container
@@ -48,7 +53,12 @@ fn image_exists(image_name: &str) -> Result<bool> {
 }
 
 /// Build Docker image for the tool
-fn build_image(image_name: &str, tool_path: &Path, python_version: &str) -> Result<()> {
+fn build_image(
+    image_name: &str,
+    tool_path: &Path,
+    python_version: &str,
+    system_deps: Option<&[String]>,
+) -> Result<()> {
     println!("  {} Building Docker image...", "→".cyan());
 
     // Check if tool has a Dockerfile
@@ -59,7 +69,7 @@ fn build_image(image_name: &str, tool_path: &Path, python_version: &str) -> Resu
         build_from_dockerfile(image_name, tool_path)?;
     } else {
         // Generate a standard Dockerfile for Python tools
-        build_standard_python_image(image_name, tool_path, python_version)?;
+        build_standard_python_image(image_name, tool_path, python_version, system_deps)?;
     }
 
     println!("  {} Image built successfully", "✓".green());
@@ -86,12 +96,20 @@ fn build_standard_python_image(
     image_name: &str,
     tool_path: &Path,
     python_version: &str,
+    system_deps: Option<&[String]>,
 ) -> Result<()> {
-    // Create temporary Dockerfile
+    let apt_layer = match system_deps {
+        Some(pkgs) if !pkgs.is_empty() => format!(
+            "RUN apt-get update && apt-get install -y {} && rm -rf /var/lib/apt/lists/*\n\n",
+            pkgs.join(" ")
+        ),
+        _ => String::new(),
+    };
+
     let dockerfile_content = format!(
         r#"FROM python:{}-slim
 
-WORKDIR /app
+{apt_layer}WORKDIR /app
 
 # Copy tool files
 COPY . /app
@@ -109,7 +127,8 @@ RUN if [ -f pyproject.toml ]; then \
 # Set entrypoint
 CMD ["python3"]
 "#,
-        python_version
+        python_version,
+        apt_layer = apt_layer,
     );
 
     // Write temporary Dockerfile

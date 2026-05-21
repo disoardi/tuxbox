@@ -44,6 +44,7 @@ pub struct RegistryCommands {
 pub struct RegistryDependencies {
     pub python: Option<String>,
     pub requirements: Option<String>,
+    pub system: Option<Vec<String>>,
 }
 
 /// Clone or update a registry
@@ -273,6 +274,7 @@ pub fn registry_tool_to_config(tool: &RegistryTool) -> ToolConfig {
             setup: c.setup.clone(),
         }),
         python_version: tool.dependencies.as_ref().and_then(|d| d.python.clone()),
+        system_deps: tool.dependencies.as_ref().and_then(|d| d.system.clone()),
     }
 }
 

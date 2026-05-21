@@ -198,6 +198,7 @@ fn get_hardcoded_tool_config(tool_name: &str) -> Result<ToolConfig> {
                 run: "python3 -m sshmenuc".to_string(),
             }),
             python_version: None,
+            system_deps: Some(vec!["openssh-client".to_string()]),
         }),
         "test-tool" => Ok(ToolConfig {
             name: "test-tool".to_string(),
@@ -211,6 +212,7 @@ fn get_hardcoded_tool_config(tool_name: &str) -> Result<ToolConfig> {
                 run: "./run.sh".to_string(),
             }),
             python_version: None,
+            system_deps: None,
         }),
         _ => Err(TuxBoxError::ToolNotFound(tool_name.to_string()).into()),
     }

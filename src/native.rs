@@ -86,6 +86,7 @@ pub fn update_native_tool(tool_name: &str) -> Result<()> {
         isolation: None,
         commands: None,
         python_version: None,
+        system_deps: None,
     };
 
     download_binary(&tool_config, &tool_dir, &binary_path)?;
