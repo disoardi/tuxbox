@@ -55,10 +55,12 @@ pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
                 run_bash_script(&tool_config, &tool_path, args)?;
             }
             _ => {
-                let isolation_hint = if tool_config.isolation.is_some() {
-                    " (isolation is set to venv/none — only python and bash are supported without Docker)"
-                } else {
-                    " — please install Docker"
+                let isolation_hint = match &tool_config.isolation {
+                    Some(iso) => format!(
+                        " (isolation = {:?} — only python and bash are supported without Docker)",
+                        iso
+                    ),
+                    None => " — please install Docker".to_string(),
                 };
                 return Err(TuxBoxError::ExecutionError(format!(
                     "Tool type '{}' cannot run locally{}",
