@@ -3,17 +3,17 @@
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::config::ToolConfig;
+use crate::config::{IsolationStrategy, ToolConfig};
 use crate::environment::{ExecutionEnvironment, detect_environment};
 use crate::error::TuxBoxError;
 use crate::{docker, git, native, python};
 
 /// Run a tool (clone if needed, then execute)
 ///
-/// Intelligent execution strategy:
-/// 1. Always check for Docker first (PREFERRED)
-/// 2. If Docker available → run in container (full isolation)
-/// 3. If Docker not available → run in Python venv (fallback)
+/// Execution strategy (in order of precedence):
+/// 1. `isolation` field in registry → honour it explicitly
+/// 2. Docker available → run in container (default preference)
+/// 3. Docker not available → run in Python venv (fallback)
 pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
     // Get tool configuration
     let tool_config = get_tool_config(tool_name)?;
@@ -32,8 +32,18 @@ pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
     // Get tool path
     let tool_path = git::tool_path(tool_name)?;
 
-    // Detect execution environment
-    let env = detect_environment();
+    // Respect explicit isolation declared in the registry; fall back to auto-detect
+    let env = match tool_config.isolation {
+        Some(IsolationStrategy::Venv) => {
+            println!("  {} isolation = venv (declared in registry)", "→".cyan());
+            ExecutionEnvironment::LocalVenv
+        }
+        Some(IsolationStrategy::Docker) => {
+            println!("  {} isolation = docker (declared in registry)", "→".cyan());
+            ExecutionEnvironment::Docker
+        }
+        _ => detect_environment(),
+    };
 
     // Execute based on environment (Docker-first approach)
     match env {
