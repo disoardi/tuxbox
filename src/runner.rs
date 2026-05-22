@@ -32,45 +32,42 @@ pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
     // Get tool path
     let tool_path = git::tool_path(tool_name)?;
 
-    // Respect explicit isolation declared in the registry; fall back to auto-detect
+    // Respect explicit isolation declared in the registry; fall back to auto-detect.
+    // IsolationStrategy::None means "run directly without container isolation" → LocalVenv.
     let env = match tool_config.isolation {
-        Some(IsolationStrategy::Venv) => {
-            println!("  {} isolation = venv (declared in registry)", "→".cyan());
+        Some(IsolationStrategy::Venv) | Some(IsolationStrategy::None) => {
             ExecutionEnvironment::LocalVenv
         }
-        Some(IsolationStrategy::Docker) => {
-            println!("  {} isolation = docker (declared in registry)", "→".cyan());
-            ExecutionEnvironment::Docker
-        }
-        _ => detect_environment(),
+        Some(IsolationStrategy::Docker) => ExecutionEnvironment::Docker,
+        None => detect_environment(),
     };
 
-    // Execute based on environment (Docker-first approach)
+    // Execute based on environment
     match env {
         ExecutionEnvironment::Docker => {
-            // PREFERRED: Use Docker for full isolation
             docker::run_in_docker(&tool_config, &tool_path, args)?;
         }
-        ExecutionEnvironment::LocalVenv => {
-            // FALLBACK: Use local Python venv or direct execution
-            match tool_config.tool_type.as_deref() {
-                Some("python") => {
-                    python::run_in_venv(&tool_config, &tool_path, args)?;
-                }
-                Some("bash") | Some("script") => {
-                    // Direct bash script execution (no Docker, no venv needed)
-                    run_bash_script(&tool_config, &tool_path, args)?;
-                }
-                _ => {
-                    // Other tool types require Docker
-                    return Err(TuxBoxError::ExecutionError(format!(
-                        "Tool type '{}' requires Docker for execution. Please install Docker.",
-                        tool_config.tool_type.as_deref().unwrap_or("unknown")
-                    ))
-                    .into());
-                }
+        ExecutionEnvironment::LocalVenv => match tool_config.tool_type.as_deref() {
+            Some("python") => {
+                python::run_in_venv(&tool_config, &tool_path, args)?;
             }
-        }
+            Some("bash") | Some("script") => {
+                run_bash_script(&tool_config, &tool_path, args)?;
+            }
+            _ => {
+                let isolation_hint = if tool_config.isolation.is_some() {
+                    " (isolation is set to venv/none — only python and bash are supported without Docker)"
+                } else {
+                    " — please install Docker"
+                };
+                return Err(TuxBoxError::ExecutionError(format!(
+                    "Tool type '{}' cannot run locally{}",
+                    tool_config.tool_type.as_deref().unwrap_or("unknown"),
+                    isolation_hint
+                ))
+                .into());
+            }
+        },
     }
 
     println!("  {} Tool executed successfully", "✓".green());
@@ -202,7 +199,7 @@ fn get_hardcoded_tool_config(tool_name: &str) -> Result<ToolConfig> {
             branch: Some("main".to_string()),
             version: Some("1.1.0".to_string()),
             tool_type: Some("python".to_string()),
-            isolation: None,
+            isolation: Some(IsolationStrategy::Venv),
             commands: Some(crate::config::Commands {
                 setup: Some("pip3 install -r requirements.txt".to_string()),
                 run: "python3 -m sshmenuc".to_string(),
