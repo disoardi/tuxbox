@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::config::{AuthType, RegistryConfig, ToolConfig};
+use crate::config::{AuthType, IsolationStrategy, RegistryConfig, ToolConfig};
 use crate::error::TuxBoxError;
 
 /// Registry tools.toml structure
@@ -29,6 +29,7 @@ pub struct RegistryTool {
     pub version: Option<String>,
     #[serde(rename = "type")]
     pub tool_type: Option<String>,
+    pub isolation: Option<IsolationStrategy>,
     pub description: Option<String>,
     pub commands: Option<RegistryCommands>,
     pub dependencies: Option<RegistryDependencies>,
@@ -268,7 +269,7 @@ pub fn registry_tool_to_config(tool: &RegistryTool) -> ToolConfig {
         branch: tool.branch.clone(),
         version: tool.version.clone(),
         tool_type: tool.tool_type.clone(),
-        isolation: None, // Will be determined by execution strategy
+        isolation: tool.isolation.clone(),
         commands: tool.commands.as_ref().map(|c| crate::config::Commands {
             run: c.run.clone(),
             setup: c.setup.clone(),

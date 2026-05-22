@@ -82,7 +82,7 @@ pub struct ToolConfig {
     pub system_deps: Option<Vec<String>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IsolationStrategy {
     Venv,

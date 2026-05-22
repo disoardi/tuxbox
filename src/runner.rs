@@ -3,17 +3,17 @@
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::config::ToolConfig;
+use crate::config::{IsolationStrategy, ToolConfig};
 use crate::environment::{ExecutionEnvironment, detect_environment};
 use crate::error::TuxBoxError;
 use crate::{docker, git, native, python};
 
 /// Run a tool (clone if needed, then execute)
 ///
-/// Intelligent execution strategy:
-/// 1. Always check for Docker first (PREFERRED)
-/// 2. If Docker available → run in container (full isolation)
-/// 3. If Docker not available → run in Python venv (fallback)
+/// Execution strategy (in order of precedence):
+/// 1. `isolation` field in registry → honour it explicitly
+/// 2. Docker available → run in container (default preference)
+/// 3. Docker not available → run in Python venv (fallback)
 pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
     // Get tool configuration
     let tool_config = get_tool_config(tool_name)?;
@@ -32,35 +32,44 @@ pub fn run_tool(tool_name: &str, args: &[String]) -> Result<()> {
     // Get tool path
     let tool_path = git::tool_path(tool_name)?;
 
-    // Detect execution environment
-    let env = detect_environment();
+    // Respect explicit isolation declared in the registry; fall back to auto-detect.
+    // IsolationStrategy::None means "run directly without container isolation" → LocalVenv.
+    let env = match tool_config.isolation {
+        Some(IsolationStrategy::Venv) | Some(IsolationStrategy::None) => {
+            ExecutionEnvironment::LocalVenv
+        }
+        Some(IsolationStrategy::Docker) => ExecutionEnvironment::Docker,
+        None => detect_environment(),
+    };
 
-    // Execute based on environment (Docker-first approach)
+    // Execute based on environment
     match env {
         ExecutionEnvironment::Docker => {
-            // PREFERRED: Use Docker for full isolation
             docker::run_in_docker(&tool_config, &tool_path, args)?;
         }
-        ExecutionEnvironment::LocalVenv => {
-            // FALLBACK: Use local Python venv or direct execution
-            match tool_config.tool_type.as_deref() {
-                Some("python") => {
-                    python::run_in_venv(&tool_config, &tool_path, args)?;
-                }
-                Some("bash") | Some("script") => {
-                    // Direct bash script execution (no Docker, no venv needed)
-                    run_bash_script(&tool_config, &tool_path, args)?;
-                }
-                _ => {
-                    // Other tool types require Docker
-                    return Err(TuxBoxError::ExecutionError(format!(
-                        "Tool type '{}' requires Docker for execution. Please install Docker.",
-                        tool_config.tool_type.as_deref().unwrap_or("unknown")
-                    ))
-                    .into());
-                }
+        ExecutionEnvironment::LocalVenv => match tool_config.tool_type.as_deref() {
+            Some("python") => {
+                python::run_in_venv(&tool_config, &tool_path, args)?;
             }
-        }
+            Some("bash") | Some("script") => {
+                run_bash_script(&tool_config, &tool_path, args)?;
+            }
+            _ => {
+                let isolation_hint = match &tool_config.isolation {
+                    Some(iso) => format!(
+                        " (isolation = {:?} — only python and bash are supported without Docker)",
+                        iso
+                    ),
+                    None => " — please install Docker".to_string(),
+                };
+                return Err(TuxBoxError::ExecutionError(format!(
+                    "Tool type '{}' cannot run locally{}",
+                    tool_config.tool_type.as_deref().unwrap_or("unknown"),
+                    isolation_hint
+                ))
+                .into());
+            }
+        },
     }
 
     println!("  {} Tool executed successfully", "✓".green());
@@ -192,7 +201,7 @@ fn get_hardcoded_tool_config(tool_name: &str) -> Result<ToolConfig> {
             branch: Some("main".to_string()),
             version: Some("1.1.0".to_string()),
             tool_type: Some("python".to_string()),
-            isolation: None,
+            isolation: Some(IsolationStrategy::Venv),
             commands: Some(crate::config::Commands {
                 setup: Some("pip3 install -r requirements.txt".to_string()),
                 run: "python3 -m sshmenuc".to_string(),
