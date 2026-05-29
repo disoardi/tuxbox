@@ -163,7 +163,14 @@ fn get_tool_config(tool_name: &str) -> Result<ToolConfig> {
 
             // Sync registries if needed (clone/update)
             for registry_config in &cfg.registries {
-                let _ = registry::sync_registry(registry_config, &registry_base_dir);
+                if let Err(e) = registry::sync_registry(registry_config, &registry_base_dir) {
+                    println!(
+                        "  {} Registry sync failed for '{}': {}",
+                        "⚠".yellow(),
+                        registry_config.name,
+                        e
+                    );
+                }
             }
 
             // Find tool in registries (priority-based)

@@ -96,8 +96,32 @@ pub struct Commands {
     pub run: String,
 }
 
+/// Reject raw file URLs that are not valid git repository URLs
+fn validate_registry_url(url: &str) -> Result<()> {
+    if url.contains("raw.githubusercontent.com") || url.contains("raw.gitea.") {
+        anyhow::bail!(
+            "La URL punta a un file grezzo, non a un repository git.\nUsa la URL del repo (es. https://github.com/user/repo)"
+        );
+    }
+    let path = url.trim_end_matches('/');
+    if let Some(last_segment) = path.rsplit('/').next() {
+        let has_non_git_extension = last_segment.contains('.')
+            && !last_segment.ends_with(".git")
+            && !last_segment.is_empty();
+        if has_non_git_extension {
+            anyhow::bail!(
+                "La URL sembra puntare a un file ('{}'), non a un repository git.\nUsa la URL del repo senza estensione file.",
+                last_segment
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Initialize TuxBox configuration with a registry
 pub fn init_config(registry_url: &str) -> Result<()> {
+    validate_registry_url(registry_url)?;
+
     let tuxbox_home = tuxbox_home()?;
 
     // Create directories
@@ -616,4 +640,31 @@ pub fn list_registries() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_registry_url_rejects_raw_github() {
+        let result =
+            validate_registry_url("https://raw.githubusercontent.com/user/repo/main/tools.toml");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("file grezzo"));
+    }
+
+    #[test]
+    fn test_validate_registry_url_rejects_file_extension() {
+        let result = validate_registry_url("https://github.com/user/repo/tools.toml");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("file"));
+    }
+
+    #[test]
+    fn test_validate_registry_url_accepts_git_repo() {
+        assert!(validate_registry_url("https://github.com/user/repo").is_ok());
+        assert!(validate_registry_url("https://github.com/user/repo.git").is_ok());
+        assert!(validate_registry_url("git@github.com:user/repo.git").is_ok());
+    }
 }
