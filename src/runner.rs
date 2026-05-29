@@ -163,7 +163,24 @@ fn get_tool_config(tool_name: &str) -> Result<ToolConfig> {
 
             // Sync registries if needed (clone/update)
             for registry_config in &cfg.registries {
-                let _ = registry::sync_registry(registry_config, &registry_base_dir);
+                let registry_path = registry_base_dir.join(&registry_config.name);
+                if let Err(e) = registry::sync_registry(registry_config, &registry_base_dir) {
+                    if !registry_path.exists() {
+                        // No local cache — cannot recover, escalate to error
+                        return Err(anyhow::anyhow!(
+                            "Registry '{}' non è mai stato sincronizzato e il sync è fallito: {}",
+                            registry_config.name,
+                            e
+                        ));
+                    }
+                    // Local cache exists — warn and continue with stale data
+                    println!(
+                        "  {} Registry sync failed for '{}': {}",
+                        "⚠".yellow(),
+                        registry_config.name,
+                        e
+                    );
+                }
             }
 
             // Find tool in registries (priority-based)

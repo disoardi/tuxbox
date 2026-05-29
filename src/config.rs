@@ -96,8 +96,45 @@ pub struct Commands {
     pub run: String,
 }
 
+/// Reject raw file URLs that are not valid git repository URLs
+fn validate_registry_url(url: &str) -> Result<()> {
+    if url.contains("raw.githubusercontent.com") || url.contains("raw.gitea.") {
+        anyhow::bail!(
+            "La URL punta a un file grezzo, non a un repository git.\nUsa la URL del repo (es. https://github.com/user/repo)"
+        );
+    }
+
+    // Extract only the path component — skip scheme://host[:port] to avoid
+    // false positives on hostnames with dots (e.g. gitea.company.io).
+    let path_component = if let Some(idx) = url.find("://") {
+        let after_scheme = &url[idx + 3..];
+        after_scheme
+            .find('/')
+            .map(|i| &after_scheme[i..])
+            .unwrap_or("")
+    } else if url.starts_with("git@") {
+        url.find(':').map(|i| &url[i + 1..]).unwrap_or("")
+    } else {
+        url
+    };
+
+    let path = path_component.trim_end_matches('/');
+    if let Some(last_segment) = path.rsplit('/').next().filter(|s| !s.is_empty()) {
+        let has_non_git_extension = last_segment.contains('.') && !last_segment.ends_with(".git");
+        if has_non_git_extension {
+            anyhow::bail!(
+                "La URL sembra puntare a un file ('{}'), non a un repository git.\nUsa la URL del repo senza estensione file.",
+                last_segment
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Initialize TuxBox configuration with a registry
 pub fn init_config(registry_url: &str) -> Result<()> {
+    validate_registry_url(registry_url)?;
+
     let tuxbox_home = tuxbox_home()?;
 
     // Create directories
@@ -407,6 +444,8 @@ pub fn show_status() -> Result<()> {
 pub fn add_registry(name: &str, url: &str, priority: Option<u32>) -> Result<()> {
     use colored::Colorize;
 
+    validate_registry_url(url)?;
+
     let mut config = load_config().unwrap_or_else(|_| Config {
         registries: Vec::new(),
         registry_url: None,
@@ -616,4 +655,51 @@ pub fn list_registries() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_registry_url_rejects_raw_github() {
+        let result =
+            validate_registry_url("https://raw.githubusercontent.com/user/repo/main/tools.toml");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("file grezzo"));
+    }
+
+    #[test]
+    fn test_validate_registry_url_rejects_file_extension() {
+        let result = validate_registry_url("https://github.com/user/repo/tools.toml");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("file"));
+    }
+
+    #[test]
+    fn test_validate_registry_url_accepts_git_repo() {
+        assert!(validate_registry_url("https://github.com/user/repo").is_ok());
+        assert!(validate_registry_url("https://github.com/user/repo.git").is_ok());
+        assert!(validate_registry_url("git@github.com:user/repo.git").is_ok());
+    }
+
+    #[test]
+    fn test_validate_registry_url_accepts_self_hosted_hostname_with_dot() {
+        // Hostname with dots must not be confused with a file extension
+        assert!(validate_registry_url("https://gitea.company.io").is_ok());
+        assert!(validate_registry_url("https://gitea.company.io/user/repo").is_ok());
+    }
+
+    #[test]
+    fn test_validate_registry_url_accepts_host_with_port() {
+        assert!(validate_registry_url("https://gitea.company.io:3000/user/repo").is_ok());
+    }
+
+    #[test]
+    fn test_validate_registry_url_rejects_raw_via_add_registry_path() {
+        // validate_registry_url is called by both init_config and add_registry
+        let result =
+            validate_registry_url("https://raw.githubusercontent.com/user/repo/main/tools.toml");
+        assert!(result.is_err());
+    }
 }
